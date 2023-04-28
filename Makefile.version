@@ -1,0 +1,39 @@
+# version information
+DATE = $(shell date -u --iso-8601=seconds)
+VERSION ?=
+GIT_TREE_STATE = ""
+GIT_TAG = ""
+GIT_TAG_LAST = ""
+RELEASE_STATUS = ""
+
+NO_GIT = $(shell git version > /dev/null 2>&1 || echo true)
+ifeq (,$(NO_GIT))
+    # get last commit ID
+    COMMIT = $(shell git rev-parse --verify HEAD)
+	# Tree state is "dirty" if there are uncommitted changes, untracked files are ignored
+	GIT_TREE_STATE = $(shell test -n "`git status --porcelain --untracked-files=no`" && echo "dirty" || echo "clean")
+	# Empty string if we are not building a tag
+	GIT_TAG = $(shell git describe --tags --abbrev=0 --exact-match 2>/dev/null || true)
+	# Find most recent tag
+	GIT_TAG_LAST = $(shell git describe --tags --abbrev=0 2>/dev/null || true)
+endif
+
+# VERSION override mechanism if needed
+ifneq (,$(VERSION))
+    RELEASE_STATUS = ",released"
+endif
+
+ifneq (,$(GIT_TAG))
+    RELEASE_STATUS = ",released"
+endif
+
+ifeq (,$(VERSION))
+    VERSION = $(GIT_TAG_LAST)
+endif
+
+# Add version/commit/date to linker flags
+VERSION_LDFLAGS = "-X github.com/Mellanox/nvidia-k8s-ipam/pkg/version.version=${VERSION} \
+	-X github.com/Mellanox/nvidia-k8s-ipam/pkg/version.commit=${COMMIT} \
+	-X github.com/Mellanox/nvidia-k8s-ipam/pkg/version.gitTreeState=${GIT_TREE_STATE} \
+	-X github.com/Mellanox/nvidia-k8s-ipam/pkg/version.releaseStatus=${RELEASE_STATUS} \
+	-X github.com/Mellanox/nvidia-k8s-ipam/pkg/version.date=${DATE}"
