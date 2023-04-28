@@ -1,0 +1,130 @@
+run:
+  timeout: 10m
+  # If set we pass it to "go list -mod={option}". From "go help modules":
+  # If invoked with -mod=readonly, the go command is disallowed from the implicit
+  # automatic updating of go.mod described above. Instead, it fails when any changes
+  # to go.mod are needed. This setting is most useful to check that go.mod does
+  # not need updates, such as in a continuous integration and testing system.
+  # If invoked with -mod=vendor, the go command assumes that the vendor
+  # directory holds the correct copies of dependencies and ignores
+  # the dependency descriptions in go.mod.
+  #
+  # Allowed values: readonly|vendor|mod
+  # By default, it isn't set.
+  modules-download-mode: readonly
+  tests: false
+
+linters:
+  disable-all: true
+  # Enable specific linter
+  # https://golangci-lint.run/usage/linters/#enabled-by-default
+  # Note(adrianc): some linters below are disabled, each should be enabled, evaluated for its contribution
+  # to code quality of the project and discovered issues to be fixed.
+  enable:
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - containedctx
+    - contextcheck
+    #- cyclop
+    - decorder
+    - depguard
+    - dogsled
+    - durationcheck
+    - errcheck
+    - errchkjson
+    - errname
+    #- errorlint
+    - execinquery
+    - exportloopref
+    - forbidigo
+    - forcetypeassert
+    - funlen
+    #- gocognit
+    - goconst
+    - gocritic
+    - gocyclo
+    #- goerr113
+    - gofmt
+    - goheader
+    - goimports
+    #- gomnd
+    - gomodguard
+    - goprintffuncname
+    - gosec
+    - gosimple
+    - govet
+    - grouper
+    - importas
+    - ineffassign
+    - interfacebloat
+    - lll
+    - logrlint
+    - maintidx
+    - makezero
+    - misspell
+    - nakedret
+    #- nestif
+    - nilerr
+    - nilnil
+    - noctx
+    - nolintlint
+    - nosprintfhostport
+    - prealloc
+    - predeclared
+    - promlinter
+    - reassign
+    - revive
+    - rowserrcheck
+    - staticcheck
+    - stylecheck
+    - tenv
+    - thelper
+    - tparallel
+    - typecheck
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - wastedassign
+    - whitespace
+    #- wsl
+
+linters-settings:
+  dupl:
+    threshold: 100
+  funlen:
+    lines: 120
+    statements: 55
+  goconst:
+    min-len: 2
+    min-occurrences: 2
+  gocyclo:
+    min-complexity: 30
+  goimports:
+    local-prefixes: github.com/Mellanox/nvidia-k8s-ipam
+  lll:
+    line-length: 120
+  gomnd:
+    settings:
+      mnd:
+        # don't include the "operation" and "assign"
+        checks: [argument,case,condition,return]
+  misspell:
+    locale: US
+  stylecheck:
+    dot-import-whitelist:
+      - github.com/onsi/ginkgo
+      - github.com/onsi/ginkgo/extensions/table
+      - github.com/onsi/gomega
+      - github.com/onsi/gomega/gstruct
+  gocritic:
+    disabled-checks:
+      - appendAssign
+  ireturn:
+    allow:
+      - anon
+      - error
+      - empty
+      - stdlib
