@@ -17,12 +17,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/containernetworking/cni/pkg/skel"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	// "github.com/containernetworking/plugins/pkg/ipam"
+	cnitypes "github.com/containernetworking/cni/pkg/types"
+	"github.com/containernetworking/plugins/pkg/ipam"
 	log "github.com/k8snetworkplumbingwg/cni-log"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/cni/pool"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/cni/types"
@@ -31,6 +34,8 @@ import (
 
 const (
 	CNIPluginName = "nv-ipam"
+
+	delegateIPAMPluginName = "host-local"
 )
 
 func NewPlugin() *Plugin {
@@ -55,23 +60,12 @@ func (p *Plugin) CmdAdd(args *skel.CmdArgs) error {
 	log.Infof("CMD Add Called with args: %+v", args)
 	log.Infof("CMD Add Stdin data: %s", string(args.StdinData))
 
-	// get pool info from node
-	node, err := conf.IPAM.K8sClient.CoreV1().Nodes().Get(context.TODO(), conf.IPAM.NodeName, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to get node %s from k8s API. %w", conf.IPAM.NodeName, err)
-	}
-
-	pm, err := pool.NewManagerImpl(node)
-	if err != nil {
-		return fmt.Errorf("failed to get pools from node %s. %w", conf.IPAM.NodeName, err)
-	}
-
-	pool := pm.GetPoolByName(conf.IPAM.PoolName)
-	if pool == nil {
-		return fmt.Errorf("failed to get pools from node %s. pool %s not found", conf.IPAM.NodeName, conf.IPAM.PoolName)
-	}
-
 	// build host-local config
+	pool, err := getPoolbyName(conf.IPAM.K8sClient, conf.IPAM.NodeName, conf.IPAM.PoolName)
+	if err != nil {
+		return fmt.Errorf("failed to get pool by name. %w", err)
+	}
+
 	hlc := types.HostLocalNetConfFromNetConfAndPool(conf, pool)
 	data, err := json.Marshal(hlc)
 	if err != nil {
@@ -81,17 +75,16 @@ func (p *Plugin) CmdAdd(args *skel.CmdArgs) error {
 	log.Infof("host-local stdin data:%s", string(data))
 
 	// call host-local cni with alternate path
+	err = os.Setenv("CNI_PATH", filepath.Join(conf.IPAM.DataDir, "bin"))
+	if err != nil {
+		return err
+	}
+	res, err := ipam.ExecAdd(delegateIPAMPluginName, data)
+	if err != nil {
+		return fmt.Errorf("failed to exec ADD host-local CNI plugin. %w", err)
+	}
 
-	// print results
-
-	// TODO: Implement
-	// err := os.Setenv("CNI_PATH", "path to host-local used by plugin")
-	// if err != nil {
-	// 	return err
-	// }
-	// res, err := ipam.ExecAdd("host-local", args.StdinData)
-	// print results
-	return nil
+	return cnitypes.PrintResult(res, conf.CNIVersion)
 }
 
 func (p *Plugin) CmdDel(args *skel.CmdArgs) error {
@@ -103,12 +96,31 @@ func (p *Plugin) CmdDel(args *skel.CmdArgs) error {
 
 	log.Infof("CMD Del Called with args: %+v", args)
 	log.Infof("CMD Del Stdin data: %s", string(args.StdinData))
-	// TODO: Implement
-	// err := os.Setenv("CNI_PATH", "path to host-local used by plugin")
-	// if err != nil {
-	//	 return err
-	// }
-	// err = ipam.ExecDel("host-local", args.StdinData)
+
+	// build host-local config
+	pool, err := getPoolbyName(conf.IPAM.K8sClient, conf.IPAM.NodeName, conf.IPAM.PoolName)
+	if err != nil {
+		return fmt.Errorf("failed to get pool by name. %w", err)
+	}
+
+	hlc := types.HostLocalNetConfFromNetConfAndPool(conf, pool)
+	data, err := json.Marshal(hlc)
+	if err != nil {
+		return fmt.Errorf("failed to marshal host-local net conf. %w", err)
+	}
+
+	log.Infof("host-local stdin data:%s", string(data))
+
+	// call host-local cni with alternate path
+	err = os.Setenv("CNI_PATH", filepath.Join(conf.IPAM.DataDir, "bin"))
+	if err != nil {
+		return err
+	}
+	err = ipam.ExecDel(delegateIPAMPluginName, data)
+	if err != nil {
+		return fmt.Errorf("failed to exec DEL host-local CNI plugin. %w", err)
+	}
+
 	return nil
 }
 
@@ -121,13 +133,31 @@ func (p *Plugin) CmdCheck(args *skel.CmdArgs) error {
 
 	log.Infof("CMD Check Called with args: %+v", args)
 	log.Infof("CMD Check Stdin data: %s", string(args.StdinData))
-	// TODO: Implement
-	// err := os.Setenv("CNI_PATH", "path to host-local used by plugin")
-	// if err != nil {
-	// 	return err
-	// }
-	// err = ipam.ExecCheck("host-local", args.StdinData)
-	// return err
+
+	// build host-local config
+	pool, err := getPoolbyName(conf.IPAM.K8sClient, conf.IPAM.NodeName, conf.IPAM.PoolName)
+	if err != nil {
+		return fmt.Errorf("failed to get pool by name. %w", err)
+	}
+
+	hlc := types.HostLocalNetConfFromNetConfAndPool(conf, pool)
+	data, err := json.Marshal(hlc)
+	if err != nil {
+		return fmt.Errorf("failed to marshal host-local net conf. %w", err)
+	}
+
+	log.Infof("host-local stdin data:%s", string(data))
+
+	// call host-local cni with alternate path
+	err = os.Setenv("CNI_PATH", filepath.Join(conf.IPAM.DataDir, "bin"))
+	if err != nil {
+		return err
+	}
+	err = ipam.ExecCheck(delegateIPAMPluginName, data)
+	if err != nil {
+		return fmt.Errorf("failed to exec CHECK host-local CNI plugin. %w", err)
+	}
+
 	return nil
 }
 
@@ -140,4 +170,23 @@ func setupLog(logFile, logLevel string) {
 	if logFile != "" {
 		log.SetLogFile(logFile)
 	}
+}
+
+func getPoolbyName(kclient *kubernetes.Clientset, nodeName, poolName string) (*pool.IPPool, error) {
+	// get pool info from node
+	node, err := kclient.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get node %s from k8s API. %w", nodeName, err)
+	}
+
+	pm, err := pool.NewManagerImpl(node)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pools from node %s. %w", nodeName, err)
+	}
+
+	pool := pm.GetPoolByName(poolName)
+	if pool == nil {
+		return nil, fmt.Errorf("failed to get pools from node %s. pool %s not found", nodeName, poolName)
+	}
+	return pool, nil
 }
