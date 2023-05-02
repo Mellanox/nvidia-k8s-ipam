@@ -24,7 +24,8 @@ const (
 	ipBlocksAnnotation = "ipam.nvidia.com/ip-blocks"
 )
 
-type IPPoolConfig struct {
+type IPPool struct {
+	Name    string
 	Subnet  string `json:"subnet"`
 	StartIP string `json:"startIP"`
 	EndIP   string `json:"endIP"`
@@ -32,12 +33,12 @@ type IPPoolConfig struct {
 }
 
 type Manager interface {
-	// GetPoolByName returns IPPoolConfig for the provided pool name or nil if pool doesnt exist
-	GetPoolByName(name string) *IPPoolConfig
+	// GetPoolByName returns IPPool for the provided pool name or nil if pool doesnt exist
+	GetPoolByName(name string) *IPPool
 }
 
 type ManagerImpl struct {
-	poolByName map[string]*IPPoolConfig
+	poolByName map[string]*IPPool
 }
 
 func NewManagerImpl(node *v1.Node) (*ManagerImpl, error) {
@@ -50,10 +51,14 @@ func NewManagerImpl(node *v1.Node) (*ManagerImpl, error) {
 		return nil, fmt.Errorf("%s node annotation not found", ipBlocksAnnotation)
 	}
 
-	poolByName := make(map[string]*IPPoolConfig)
+	poolByName := make(map[string]*IPPool)
 	err := json.Unmarshal([]byte(blocks), &poolByName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse %s annotation content. %w", ipBlocksAnnotation, err)
+	}
+
+	for poolName, pool := range poolByName {
+		pool.Name = poolName
 	}
 
 	return &ManagerImpl{
@@ -62,6 +67,6 @@ func NewManagerImpl(node *v1.Node) (*ManagerImpl, error) {
 }
 
 // GetPoolByName implements Manager interface
-func (pm *ManagerImpl) GetPoolByName(name string) *IPPoolConfig {
+func (pm *ManagerImpl) GetPoolByName(name string) *IPPool {
 	return pm.poolByName[name]
 }
