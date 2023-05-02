@@ -42,9 +42,11 @@ type HostLocalRange struct {
 	Gateway    string `json:"gateway,omitempty"`
 }
 
-func HostLocalNetConfFromNetConfAndPool(nc *NetConf, p *pool.IPPoolConfig) *HostLocalNetConf {
+func HostLocalNetConfFromNetConfAndPool(nc *NetConf, p *pool.IPPool) *HostLocalNetConf {
+	// Note(adrianc): we use Pool name as Network Name for host-local call so that assignments are managed
+	// by host-local ipam by pool name and not the network name.
 	return &HostLocalNetConf{
-		Name:       nc.Name,
+		Name:       p.Name,
 		CNIVersion: nc.CNIVersion,
 		IPAM: &HostLocalIPAMConfig{
 			Type:    "host-local",

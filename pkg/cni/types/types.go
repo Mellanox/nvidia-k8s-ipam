@@ -27,13 +27,13 @@ import (
 )
 
 const (
-	DefaultConfDir    = "/etc/cni/net.d/nv-ipam.d"
-	DefaultKubeConfig = DefaultConfDir + "/" + "nv-ipam.kubeconfig"
-	DefaultDataDir    = "/var/lib/cni/nv-ipam"
-	DefaultLogFile    = "/var/log/nv-ipam-cni.log"
+	DefaultConfDir = "/etc/cni/net.d/nv-ipam.d"
+	DefaultDataDir = "/var/lib/cni/nv-ipam"
+	DefaultLogFile = "/var/log/nv-ipam-cni.log"
 
-	HostLocalDataDir = "state/host-local"
-	K8sNodeNameFile  = "k8s-node-name"
+	HostLocalDataDir          = "state/host-local"
+	K8sNodeNameFile           = "k8s-node-name"
+	DefaultKubeConfigFileName = "nv-ipam.kubeconfig"
 )
 
 type IPAMConf struct {
@@ -69,24 +69,24 @@ func LoadConf(bytes []byte) (*NetConf, error) {
 		return nil, fmt.Errorf("IPAM config missing 'ipam' key")
 	}
 
-	if n.IPAM.PoolName == "" {
-		return nil, fmt.Errorf("IPAM config missing poolName")
-	}
-
-	if n.IPAM.Kubeconfig == "" {
-		n.IPAM.Kubeconfig = DefaultKubeConfig
+	if n.IPAM.ConfDir == "" {
+		n.IPAM.ConfDir = DefaultConfDir
 	}
 
 	if n.IPAM.DataDir == "" {
 		n.IPAM.DataDir = DefaultDataDir
 	}
 
-	if n.IPAM.ConfDir == "" {
-		n.IPAM.ConfDir = DefaultConfDir
+	if n.IPAM.Kubeconfig == "" {
+		n.IPAM.Kubeconfig = filepath.Join(n.IPAM.ConfDir, DefaultKubeConfigFileName)
 	}
 
 	if n.IPAM.LogFile == "" {
 		n.IPAM.LogFile = DefaultLogFile
+	}
+
+	if n.IPAM.PoolName == "" {
+		n.IPAM.PoolName = n.Name
 	}
 
 	p := filepath.Join(n.IPAM.ConfDir, K8sNodeNameFile)
