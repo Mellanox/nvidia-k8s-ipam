@@ -27,20 +27,29 @@ import (
 )
 
 const (
+	// DefaultConfDir is the default dir where configurations are found
 	DefaultConfDir = "/etc/cni/net.d/nv-ipam.d"
+	// DefaultDataDir is the default dir where cni stores data and binaries
 	DefaultDataDir = "/var/lib/cni/nv-ipam"
+	// DefaultLogFile default log file path to be used for logging
 	DefaultLogFile = "/var/log/nv-ipam-cni.log"
 
-	HostLocalDataDir          = "state/host-local"
-	K8sNodeNameFile           = "k8s-node-name"
+	// HostLocalDataDir is the relative path within the data dir for host-local state data
+	HostLocalDataDir = "state/host-local"
+	// K8sNodeNameFile is the file name containing k8s node name
+	K8sNodeNameFile = "k8s-node-name"
+	// DefaultKubeConfigFileName is the default name of kubeconfig file
 	DefaultKubeConfigFileName = "nv-ipam.kubeconfig"
+	// ConfFileName is the name of CNI configuration file found in conf dir
+	ConfFileName = "nv-ipam.conf"
 )
 
+// IPAMConf is the configuration supported by our CNI plugin
 type IPAMConf struct {
 	types.IPAM
 
 	// PoolName is the name of the pool to be used to allocate IP
-	PoolName   string `json:"poolName"`
+	PoolName   string `json:"poolName,omitempty"`
 	Kubeconfig string `json:"kubeconfig,omitempty"`
 	DataDir    string `json:"dataDir,omitempty"`
 	ConfDir    string `json:"confDir,omitempty"`
@@ -52,12 +61,14 @@ type IPAMConf struct {
 	K8sClient *kubernetes.Clientset
 }
 
+// NetConf is CNI network config
 type NetConf struct {
 	Name       string    `json:"name"`
 	CNIVersion string    `json:"cniVersion"`
 	IPAM       *IPAMConf `json:"ipam"`
 }
 
+// LoadConf Loads NetConf from json string provided as []byte
 func LoadConf(bytes []byte) (*NetConf, error) {
 	n := &NetConf{}
 
@@ -73,22 +84,28 @@ func LoadConf(bytes []byte) (*NetConf, error) {
 		n.IPAM.ConfDir = DefaultConfDir
 	}
 
-	if n.IPAM.DataDir == "" {
-		n.IPAM.DataDir = DefaultDataDir
+	// overlay config from conf file if exists.
+	confFilePath := filepath.Join(n.IPAM.ConfDir, ConfFileName)
+	fileConf, err := LoadFromConfFile(confFilePath)
+	if err == nil {
+		overlayConf(fileConf, n.IPAM)
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("failed to read/parse config file(%s). %w", confFilePath, err)
 	}
 
-	if n.IPAM.Kubeconfig == "" {
-		n.IPAM.Kubeconfig = filepath.Join(n.IPAM.ConfDir, DefaultKubeConfigFileName)
+	// overlay config with defaults
+	defaultConf := &IPAMConf{
+		// use network name as pool name by default
+		PoolName:   n.Name,
+		Kubeconfig: filepath.Join(n.IPAM.ConfDir, DefaultKubeConfigFileName),
+		DataDir:    DefaultDataDir,
+		ConfDir:    DefaultConfDir,
+		LogFile:    DefaultLogFile,
+		LogLevel:   "info",
 	}
+	overlayConf(defaultConf, n.IPAM)
 
-	if n.IPAM.LogFile == "" {
-		n.IPAM.LogFile = DefaultLogFile
-	}
-
-	if n.IPAM.PoolName == "" {
-		n.IPAM.PoolName = n.Name
-	}
-
+	// get Node name
 	p := filepath.Join(n.IPAM.ConfDir, K8sNodeNameFile)
 	data, err := os.ReadFile(p)
 	if err != nil {
@@ -99,10 +116,55 @@ func LoadConf(bytes []byte) (*NetConf, error) {
 		return nil, fmt.Errorf("failed to parse k8s node name from path: %s", p)
 	}
 
+	// create k8s client
 	n.IPAM.K8sClient, err = k8sclient.FromKubeconfig(n.IPAM.Kubeconfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create k8s client from kubeconfig path: %s. %w", n.IPAM.Kubeconfig, err)
 	}
 
 	return n, nil
+}
+
+// LoadFromConfFile returns *IPAMConf with values from config file located in filePath.
+func LoadFromConfFile(filePath string) (*IPAMConf, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	confFromFile := &IPAMConf{}
+	err = json.Unmarshal(data, confFromFile)
+	if err != nil {
+		return nil, err
+	}
+
+	return confFromFile, nil
+}
+
+// overlayConf overlays IPAMConf "from" onto "to"
+// fields in to are overlayed if they are empty in "to".
+func overlayConf(from, to *IPAMConf) {
+	if to.ConfDir == "" {
+		to.ConfDir = from.ConfDir
+	}
+
+	if to.DataDir == "" {
+		to.DataDir = from.DataDir
+	}
+
+	if to.Kubeconfig == "" {
+		to.Kubeconfig = from.Kubeconfig
+	}
+
+	if to.LogFile == "" {
+		to.LogFile = from.LogFile
+	}
+
+	if to.LogLevel == "" {
+		to.LogLevel = from.LogLevel
+	}
+
+	if to.PoolName == "" {
+		to.PoolName = from.PoolName
+	}
 }
