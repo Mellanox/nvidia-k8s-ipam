@@ -73,7 +73,7 @@ func LoadConf(bytes []byte) (*NetConf, error) {
 	n := &NetConf{}
 
 	if err := json.Unmarshal(bytes, &n); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal configurations: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal configurations. %w", err)
 	}
 
 	if n.IPAM == nil {

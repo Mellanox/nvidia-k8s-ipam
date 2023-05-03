@@ -53,12 +53,10 @@ type Plugin struct {
 func (p *Plugin) CmdAdd(args *skel.CmdArgs) error {
 	conf, err := types.LoadConf(args.StdinData)
 	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+		return fmt.Errorf("failed to load config. %w", err)
 	}
 	setupLog(conf.IPAM.LogFile, conf.IPAM.LogLevel)
-
-	log.Infof("CMD Add Called with args: %+v", args)
-	log.Infof("CMD Add Stdin data: %s", string(args.StdinData))
+	logCall("ADD", args, conf.IPAM)
 
 	// build host-local config
 	pool, err := getPoolbyName(conf.IPAM.K8sClient, conf.IPAM.NodeName, conf.IPAM.PoolName)
@@ -71,8 +69,7 @@ func (p *Plugin) CmdAdd(args *skel.CmdArgs) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal host-local net conf. %w", err)
 	}
-
-	log.Infof("host-local stdin data:%s", string(data))
+	log.Debugf("host-local stdin data: %q", string(data))
 
 	// call host-local cni with alternate path
 	err = os.Setenv("CNI_PATH", filepath.Join(conf.IPAM.DataDir, "bin"))
@@ -90,12 +87,10 @@ func (p *Plugin) CmdAdd(args *skel.CmdArgs) error {
 func (p *Plugin) CmdDel(args *skel.CmdArgs) error {
 	conf, err := types.LoadConf(args.StdinData)
 	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+		return fmt.Errorf("failed to load config. %w", err)
 	}
 	setupLog(conf.IPAM.LogFile, conf.IPAM.LogLevel)
-
-	log.Infof("CMD Del Called with args: %+v", args)
-	log.Infof("CMD Del Stdin data: %s", string(args.StdinData))
+	logCall("DEL", args, conf.IPAM)
 
 	// build host-local config
 	pool, err := getPoolbyName(conf.IPAM.K8sClient, conf.IPAM.NodeName, conf.IPAM.PoolName)
@@ -108,8 +103,7 @@ func (p *Plugin) CmdDel(args *skel.CmdArgs) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal host-local net conf. %w", err)
 	}
-
-	log.Infof("host-local stdin data:%s", string(data))
+	log.Debugf("host-local stdin data: %q", string(data))
 
 	// call host-local cni with alternate path
 	err = os.Setenv("CNI_PATH", filepath.Join(conf.IPAM.DataDir, "bin"))
@@ -127,12 +121,10 @@ func (p *Plugin) CmdDel(args *skel.CmdArgs) error {
 func (p *Plugin) CmdCheck(args *skel.CmdArgs) error {
 	conf, err := types.LoadConf(args.StdinData)
 	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+		return fmt.Errorf("failed to load config. %w", err)
 	}
 	setupLog(conf.IPAM.LogFile, conf.IPAM.LogLevel)
-
-	log.Infof("CMD Check Called with args: %+v", args)
-	log.Infof("CMD Check Stdin data: %s", string(args.StdinData))
+	logCall("CHECK", args, conf.IPAM)
 
 	// build host-local config
 	pool, err := getPoolbyName(conf.IPAM.K8sClient, conf.IPAM.NodeName, conf.IPAM.PoolName)
@@ -145,8 +137,7 @@ func (p *Plugin) CmdCheck(args *skel.CmdArgs) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal host-local net conf. %w", err)
 	}
-
-	log.Infof("host-local stdin data:%s", string(data))
+	log.Debugf("host-local stdin data: %q", string(data))
 
 	// call host-local cni with alternate path
 	err = os.Setenv("CNI_PATH", filepath.Join(conf.IPAM.DataDir, "bin"))
@@ -170,6 +161,12 @@ func setupLog(logFile, logLevel string) {
 	if logFile != "" {
 		log.SetLogFile(logFile)
 	}
+}
+
+func logCall(cmd string, args *skel.CmdArgs, conf *types.IPAMConf) {
+	log.Infof("CMD %s Call: ContainerID: %s Netns: %s IfName: %s", cmd, args.ContainerID, args.Netns, args.IfName)
+	log.Debugf("CMD %s: Args: %s StdinData: %q", cmd, args.Args, string(args.StdinData))
+	log.Debugf("CMD %s: Parsed IPAM conf: %+v", cmd, conf)
 }
 
 func getPoolbyName(kclient *kubernetes.Clientset, nodeName, poolName string) (*pool.IPPool, error) {
