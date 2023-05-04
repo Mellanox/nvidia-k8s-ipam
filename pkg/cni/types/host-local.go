@@ -16,7 +16,7 @@ package types
 import (
 	"path/filepath"
 
-	"github.com/Mellanox/nvidia-k8s-ipam/pkg/cni/pool"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
 )
 
 // TODO: do we want to support Routes ? DNS entires from ResolvConf as host-local CNI ?

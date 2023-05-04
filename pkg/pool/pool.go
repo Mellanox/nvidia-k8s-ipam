@@ -25,7 +25,7 @@ const (
 )
 
 type IPPool struct {
-	Name    string
+	Name    string `json:"-"`
 	Subnet  string `json:"subnet"`
 	StartIP string `json:"startIP"`
 	EndIP   string `json:"endIP"`
@@ -35,6 +35,8 @@ type IPPool struct {
 type Manager interface {
 	// GetPoolByName returns IPPool for the provided pool name or nil if pool doesnt exist
 	GetPoolByName(name string) *IPPool
+	// GetPools returns map with information about all pools
+	GetPools() map[string]*IPPool
 }
 
 type ManagerImpl struct {
@@ -69,4 +71,9 @@ func NewManagerImpl(node *v1.Node) (*ManagerImpl, error) {
 // GetPoolByName implements Manager interface
 func (pm *ManagerImpl) GetPoolByName(name string) *IPPool {
 	return pm.poolByName[name]
+}
+
+// GetPools implements Manager interface
+func (pm *ManagerImpl) GetPools() map[string]*IPPool {
+	return pm.poolByName
 }

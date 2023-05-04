@@ -27,8 +27,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/Mellanox/nvidia-k8s-ipam/pkg/cni/pool"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/cni/types"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/version"
 )
 

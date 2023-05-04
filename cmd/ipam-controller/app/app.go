@@ -21,12 +21,16 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/term"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	// register json format for logger
@@ -37,7 +41,10 @@ import (
 
 	"github.com/Mellanox/nvidia-k8s-ipam/cmd/ipam-controller/app/options"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/allocator"
+	configmapctrl "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/controllers/configmap"
 	nodectrl "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/controllers/node"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/selector"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/version"
 )
 
@@ -85,7 +92,9 @@ func RunController(ctx context.Context, opts *options.Options) error {
 	logger := logr.FromContextOrDiscard(ctx)
 	ctrl.SetLogger(logger)
 
-	logger.Info("start IPAM controller", "version", version.GetVersionString())
+	logger.Info("start IPAM controller",
+		"version", version.GetVersionString(), "config", opts.ConfigMapName,
+		"configNamespace", opts.ConfigMapNamespace)
 
 	scheme := runtime.NewScheme()
 
@@ -101,7 +110,14 @@ func RunController(ctx context.Context, opts *options.Options) error {
 	}
 
 	mgr, err := ctrl.NewManager(conf, ctrl.Options{
-		Scheme:                        scheme,
+		Scheme: scheme,
+		NewCache: cache.BuilderWithOptions(cache.Options{
+			SelectorsByObject: cache.SelectorsByObject{&corev1.ConfigMap{}: cache.ObjectSelector{
+				Field: fields.AndSelectors(
+					fields.ParseSelectorOrDie(fmt.Sprintf("metadata.name=%s", opts.ConfigMapName)),
+					fields.ParseSelectorOrDie(fmt.Sprintf("metadata.namespace=%s", opts.ConfigMapNamespace))),
+			}},
+		}),
 		MetricsBindAddress:            opts.MetricsAddr,
 		Port:                          9443,
 		HealthProbeBindAddress:        opts.ProbeAddr,
@@ -115,11 +131,31 @@ func RunController(ctx context.Context, opts *options.Options) error {
 		return err
 	}
 
+	netAllocator := allocator.New()
+	nodeSelector := selector.New()
+	configEventCH := make(chan event.GenericEvent, 1)
+
 	if err = (&nodectrl.NodeReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Allocator:     netAllocator,
+		Selector:      nodeSelector,
+		ConfigEventCh: configEventCH,
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		logger.Error(err, "unable to create controller", "controller", "IPClaim")
+		logger.Error(err, "unable to create controller", "controller", "Node")
+		return err
+	}
+
+	if err = (&configmapctrl.ConfigMapReconciler{
+		Allocator:          netAllocator,
+		Selector:           nodeSelector,
+		ConfigEventCh:      configEventCH,
+		ConfigMapName:      opts.ConfigMapName,
+		ConfigMapNamespace: opts.ConfigMapNamespace,
+		Client:             mgr.GetClient(),
+		Scheme:             mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		logger.Error(err, "unable to create controller", "controller", "ConfigMap")
 		return err
 	}
 
