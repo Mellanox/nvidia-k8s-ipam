@@ -33,7 +33,7 @@ metadata:
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: kube-nv-ipam-node-ds
+  name: nv-ipam-node-ds
   namespace: kube-system
   labels:
     tier: node
@@ -52,7 +52,6 @@ spec:
         app: nv-ipam-node
         name: nv-ipam-node
     spec:
-      hostNetwork: true
       tolerations:
         - operator: Exists
           effect: NoSchedule
@@ -60,7 +59,7 @@ spec:
           effect: NoExecute
       serviceAccountName: nv-ipam-node
       containers:
-        - name: kube-nv-ipam-node
+        - name: nv-ipam-node
           image: ghcr.io/mellanox/nvidia-k8s-ipam:latest
           imagePullPolicy: IfNotPresent
           env:
@@ -69,6 +68,9 @@ spec:
                 fieldRef:
                   fieldPath: spec.nodeName
           command: [ "/ipam-node" ]
+          args:
+            - --nv-ipam-log-file=/var/log/nv-ipam-cni.log
+            - --nv-ipam-log-level=info
           resources:
             requests:
               cpu: "100m"
