@@ -87,8 +87,12 @@ build-controller: ## build IPAM controller
 build-node: ## build IPAM node
 	$(GO_BUILD_OPTS) go build -ldflags $(GO_LDFLAGS) -o $(BUILD_DIR)/ipam-node ./cmd/ipam-node/main.go
 
+.PHONY: build-cni
+build-cni: ## build IPAM cni
+	$(GO_BUILD_OPTS) go build -ldflags $(GO_LDFLAGS) -o $(BUILD_DIR)/nv-ipam ./cmd/nv-ipam/main.go
+
 .PHONY: build
-build: build-controller build-node ## Build project binaries
+build: build-controller build-node build-cni ## Build project binaries
 	
 
 .PHONY: docker-build

@@ -24,4 +24,5 @@ FROM gcr.io/distroless/base-debian11:latest
 WORKDIR /
 COPY --from=builder /workspace/build/ipam-controller .
 COPY --from=builder /workspace/build/ipam-node .
+COPY --from=builder /workspace/build/nv-ipam .
 COPY --from=builder /workspace/plugins/plugins/bin/host-local .
