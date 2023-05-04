@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nvidia-k8s-ipam-config
+  namespace: kube-system
+data:
+  config: |
+    {
+      "pools": {
+        "pool1": { "subnet": "192.168.0.0/16", "perNodeBlockSize": 100 , "gateway": "192.168.0.1"},
+        "pool2": { "subnet": "172.16.0.0/16", "perNodeBlockSize": 50 , "gateway": "172.16.0.1"}
+      },
+      "nodeSelector": {"kubernetes.io/os": "linux"}
+    }
