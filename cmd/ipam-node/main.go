@@ -31,6 +31,9 @@ import (
 
 // Options stores command line options
 type Options struct {
+	CNIBinDir                string
+	NvIpamCNIBinFile         string
+	SkipNvIpamCNIBinaryCopy  bool
 	NvIpamCNIDataDir         string
 	NvIpamCNIDataDirHost     string
 	CNIConfDir               string
@@ -51,6 +54,10 @@ func (o *Options) addFlags() {
 	// suppress error message for help
 	pflag.ErrHelp = nil //nolint:golint,reassign
 	fs := pflag.CommandLine
+	fs.StringVar(&o.CNIBinDir,
+		"cni-bin-dir", "/host/opt/cni/bin", "CNI binary directory")
+	fs.StringVar(&o.NvIpamCNIBinFile,
+		"nv-ipam-bin-file", "/nv-ipam", "nv-ipam binary file path")
 	fs.StringVar(&o.NvIpamCNIDataDir,
 		"nv-ipam-cni-data-dir", "/host/var/lib/cni/nv-ipam", "nv-ipam CNI data directory")
 	fs.StringVar(&o.NvIpamCNIDataDirHost,
@@ -73,6 +80,11 @@ func (o *Options) addFlags() {
 }
 
 func (o *Options) verifyFileExists() error {
+	// CNIBinDir
+	if _, err := os.Stat(o.CNIBinDir); err != nil {
+		return fmt.Errorf("cni-bin-dir is not found: %v", err)
+	}
+
 	// CNIConfDir
 	if _, err := os.Stat(o.CNIConfDir); err != nil {
 		return fmt.Errorf("cni-conf-dir is not found: %v", err)
@@ -283,6 +295,15 @@ func main() {
 	if err != nil {
 		log.Printf("%v\n", err)
 		return
+	}
+
+	// copy nv-ipam binary
+	if !opt.SkipNvIpamCNIBinaryCopy {
+		// Copy
+		if err = cmdutils.CopyFileAtomic(opt.NvIpamCNIBinFile, opt.CNIBinDir, "_nv-ipam", "nv-ipam"); err != nil {
+			log.Printf("failed at nv-ipam copy: %v\n", err)
+			return
+		}
 	}
 
 	// copy host-local binary

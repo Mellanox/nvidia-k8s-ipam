@@ -79,6 +79,8 @@ spec:
         securityContext:
           privileged: true
         volumeMounts:
+        - name: cnibin
+          mountPath: /host/opt/cni/bin          
         - name: cni
           mountPath: /host/etc/cni/net.d
         - name: hostlocalcnibin
@@ -87,6 +89,10 @@ spec:
           mountPath: /host/var/lib/cni/nv-ipam/state/host-local
       terminationGracePeriodSeconds: 10
       volumes:
+        - name: cnibin
+          hostPath:
+            path: /opt/cni/bin
+            type: DirectoryOrCreate        
         - name: cni
           hostPath:
             path: /etc/cni/net.d
