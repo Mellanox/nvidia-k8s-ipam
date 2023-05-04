@@ -1,0 +1,234 @@
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: nv-ipam-node
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - nodes
+    verbs:
+      - get
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: nv-ipam-node
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nv-ipam-node
+subjects:
+  - kind: ServiceAccount
+    name: nv-ipam-node
+    namespace: kube-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nv-ipam-node
+  namespace: kube-system
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kube-nv-ipam-node-ds
+  namespace: kube-system
+  labels:
+    tier: node
+    app: nv-ipam-node
+    name: nv-ipam-node
+spec:
+  selector:
+    matchLabels:
+      name: nv-ipam-node
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        tier: node
+        app: nv-ipam-node
+        name: nv-ipam-node
+    spec:
+      hostNetwork: true
+      tolerations:
+        - operator: Exists
+          effect: NoSchedule
+        - operator: Exists
+          effect: NoExecute
+      serviceAccountName: nv-ipam-node
+      containers:
+        - name: kube-nv-ipam-node
+          image: ghcr.io/mellanox/nvidia-k8s-ipam:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          command: [ "/ipam-node" ]
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "50Mi"
+            limits:
+              cpu: "100m"
+              memory: "50Mi"
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: cnibin
+              mountPath: /host/opt/cni/bin
+            - name: cni
+              mountPath: /host/etc/cni/net.d
+            - name: hostlocalcnibin
+              mountPath: /host/var/lib/cni/nv-ipam/bin
+            - name: hostlocalcnistate
+              mountPath: /host/var/lib/cni/nv-ipam/state/host-local
+      terminationGracePeriodSeconds: 10
+      volumes:
+        - name: cnibin
+          hostPath:
+            path: /opt/cni/bin
+            type: DirectoryOrCreate
+        - name: cni
+          hostPath:
+            path: /etc/cni/net.d
+            type: DirectoryOrCreate
+        - name: hostlocalcnibin
+          hostPath:
+            path: /var/lib/cni/nv-ipam/bin
+            type: DirectoryOrCreate
+        - name: hostlocalcnistate
+          hostPath:
+            path: /var/lib/cni/nv-ipam/state/host-local
+            type: DirectoryOrCreate
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: nv-ipam-controller
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - nodes
+    verbs:
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - get
+      - list
+      - watch
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: nv-ipam-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nv-ipam-controller
+subjects:
+  - kind: ServiceAccount
+    name: nv-ipam-controller
+    namespace: kube-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nv-ipam-controller
+  namespace: kube-system
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: nv-ipam-controller
+  namespace: kube-system
+  annotations:
+    kubernetes.io/description: |
+      This deployment launches the nv-ipam controller for nv-ipam.
+spec:
+  strategy:
+    type: RollingUpdate
+  replicas: 1
+  selector:
+    matchLabels:
+      name: nv-ipam-controller
+  template:
+    metadata:
+      labels:
+        name: nv-ipam-controller
+    spec:
+      priorityClassName: system-cluster-critical
+      serviceAccountName: nv-ipam-controller
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 1
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/master
+                    operator: In
+                    values:
+                      - ""
+            - weight: 1
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: In
+                    values:
+                      - ""
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: nv-ipam-controller
+          image: ghcr.io/mellanox/nvidia-k8s-ipam:latest
+          imagePullPolicy: IfNotPresent
+          command: [ "/ipam-controller" ]
+          args:
+            - --config-name=nvidia-k8s-ipam-config
+            - --config-namespace=$(POD_NAMESPACE)
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - "ALL"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 300Mi
