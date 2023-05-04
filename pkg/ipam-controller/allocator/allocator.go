@@ -27,8 +27,8 @@ import (
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/Mellanox/nvidia-k8s-ipam/pkg/cni/pool"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ip"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
 )
 
 var ErrNoFreeRanges = errors.New("no free IP ranges available")

@@ -77,31 +77,3 @@ func (pm *ManagerImpl) GetPoolByName(name string) *IPPool {
 func (pm *ManagerImpl) GetPools() map[string]*IPPool {
 	return pm.poolByName
 }
-
-// SetPools serialize IP pools settings for the node and add this info as annotation
-func SetPools(node *v1.Node, pools map[string]*IPPool) error {
-	annotations := node.GetAnnotations()
-	if annotations == nil {
-		annotations = map[string]string{}
-	}
-	data, err := json.Marshal(pools)
-	if err != nil {
-		return fmt.Errorf("failed to serialize pools config: %v", err)
-	}
-	annotations[ipBlocksAnnotation] = string(data)
-	node.SetAnnotations(annotations)
-	return nil
-}
-
-// AnnotationExist returns true if ip-block annotation exist
-func AnnotationExist(node *v1.Node) bool {
-	_, exist := node.GetAnnotations()[ipBlocksAnnotation]
-	return exist
-}
-
-// RemoveAnnotation removes annotation with ip-block from the node object
-func RemoveAnnotation(node *v1.Node) {
-	annotations := node.GetAnnotations()
-	delete(annotations, ipBlocksAnnotation)
-	node.SetAnnotations(annotations)
-}

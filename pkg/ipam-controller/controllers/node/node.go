@@ -33,9 +33,9 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/Mellanox/nvidia-k8s-ipam/pkg/cni/pool"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/allocator"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/selector"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
 )
 
 // NodeReconciler reconciles Node objects
@@ -91,7 +91,7 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, nil
 	}
 
-	if err := pool.SetPools(node, expectedAlloc); err != nil {
+	if err := pool.SetIPBlockAnnotation(node, expectedAlloc); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -108,10 +108,10 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 
 // remove annotation from the node object in the API
 func (r *NodeReconciler) cleanAnnotation(ctx context.Context, node *corev1.Node) (ctrl.Result, error) {
-	if !pool.AnnotationExist(node) {
+	if !pool.IPBlockAnnotationExists(node) {
 		return ctrl.Result{}, nil
 	}
-	pool.RemoveAnnotation(node)
+	pool.RemoveIPBlockAnnotation(node)
 	if err := r.Client.Update(ctx, node); err != nil {
 		return ctrl.Result{}, err
 	}
