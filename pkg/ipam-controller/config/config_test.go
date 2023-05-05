@@ -31,6 +31,12 @@ var _ = Describe("Config", func() {
 		cfg := &config.Config{Pools: map[string]config.PoolConfig{"pool1": poolConfig}}
 		Expect(cfg.Validate()).To(HaveOccurred())
 	})
+	It("Invalid pool: no gw", func() {
+		poolConfig := getValidPool()
+		poolConfig.Gateway = ""
+		cfg := &config.Config{Pools: map[string]config.PoolConfig{"pool1": poolConfig}}
+		Expect(cfg.Validate()).To(HaveOccurred())
+	})
 	It("Invalid pool: gw outside of the subnet", func() {
 		poolConfig := getValidPool()
 		poolConfig.Gateway = "10.10.10.1"
