@@ -369,11 +369,6 @@ func ipPoolConfigToNodeAllocationInfo(node string, alloc *pool.IPPool) (nodeAllo
 	if ip.Cmp(nodeAllocEnd, nodeAllocStart) <= 0 {
 		return nodeAllocationInfo{}, fmt.Errorf("invalid allocation allocators: start IP must be less then end IP")
 	}
-
-	ipCount := ip.Distance(nodeAllocStart, nodeAllocEnd)
-	if ipCount < 1 {
-		return nodeAllocationInfo{}, fmt.Errorf("invalid allocation allocators: can't compute count of allocated IPs")
-	}
 	return nodeAllocationInfo{
 		Node:           node,
 		Subnet:         subnet,
