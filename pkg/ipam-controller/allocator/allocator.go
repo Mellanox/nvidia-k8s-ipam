@@ -99,28 +99,32 @@ func (pa *poolAllocator) Allocate(ctx context.Context, node string) (nodeAllocat
 			nextI := i + 1
 			// if last allocation in the list
 			if nextI > len(allocations)-1 ||
-				// or we found a "hole" in allocations. the "hole" can't be less than required for the allocation by design.
-				// because we reset all allocations when PerNodeBlockSize size changes
+				// or we found a "hole" in allocations. the "hole" can't be less than required for
+				// the allocation by design. because we reset all allocations when PerNodeBlockSize size changes
 				ip.Distance(allocations[i].EndIP, allocations[nextI].StartIP) > 1 {
 				startIP = ip.NextIP(allocations[i].EndIP)
 				break
 			}
 		}
 	}
-	nodeRange := allocatedRange{
-		StartIP: startIP,
-		EndIP:   ip.NextIPWithOffset(startIP, int64(pa.cfg.PerNodeBlockSize)-1),
-	}
-	if !pa.cfg.Subnet.Contains(nodeRange.EndIP) || ip.IsBroadcast(nodeRange.EndIP, pa.cfg.Subnet) {
+	endIP := ip.NextIPWithOffset(startIP, int64(pa.cfg.PerNodeBlockSize)-1)
+
+	if startIP == nil ||
+		endIP == nil ||
+		!pa.cfg.Subnet.Contains(endIP) ||
+		ip.IsBroadcast(endIP, pa.cfg.Subnet) {
 		// out of range
 		log.Info("can't allocate: pool has no free ranges")
 		return nodeAllocationInfo{}, ErrNoFreeRanges
 	}
 
-	pa.allocations[node] = nodeRange
 	log.Info("range allocated",
-		"start", nodeRange.StartIP, "end", nodeRange.EndIP)
-	return pa.getNodeAllocationInfo(node, nodeRange), nil
+		"start", startIP, "end", endIP)
+	pa.allocations[node] = allocatedRange{
+		StartIP: startIP,
+		EndIP:   endIP,
+	}
+	return pa.getNodeAllocationInfo(node, pa.allocations[node]), nil
 }
 
 // Deallocate remove info about allocation for the node from the poolAllocator
@@ -161,8 +165,9 @@ func (pa *poolAllocator) checkAllocation(allocData nodeAllocationInfo) error {
 	// check that StartIP of the range has valid offset.
 	// all ranges have same size, so we can simply check that (StartIP offset - 1) % pa.cfg.PerNodeBlockSize == 0
 	// -1 required because we skip network addressee (e.g. in 192.168.0.0/24, first allocation will be 192.168.0.1)
-	if math.Mod(float64(ip.Distance(ip.Network(pa.cfg.Subnet).IP, allocData.StartIP))-1,
-		float64(pa.cfg.PerNodeBlockSize)) != 0 {
+	distanceFromNetworkStart := ip.Distance(pa.cfg.Subnet.IP, allocData.StartIP)
+	if distanceFromNetworkStart < 1 ||
+		math.Mod(float64(distanceFromNetworkStart)-1, float64(pa.cfg.PerNodeBlockSize)) != 0 {
 		return fmt.Errorf("invalid start IP offset")
 	}
 	if ip.Distance(allocData.StartIP, allocData.EndIP) != int64(pa.cfg.PerNodeBlockSize)-1 {
