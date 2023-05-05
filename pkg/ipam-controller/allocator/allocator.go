@@ -90,10 +90,10 @@ func (pa *poolAllocator) Allocate(ctx context.Context, node string) (nodeAllocat
 	}
 	allocations := pa.getAllocationsAsSlice()
 	var startIP net.IP
-	if len(allocations) == 0 || ip.Distance(ip.Network(pa.cfg.Subnet).IP, allocations[0].StartIP) > 2 {
+	if len(allocations) == 0 || ip.Distance(pa.cfg.Subnet.IP, allocations[0].StartIP) > 2 {
 		// start allocations from the network address if there are no allocations or if the "hole" exist before
 		// the firs allocation
-		startIP = ip.NextIP(ip.Network(pa.cfg.Subnet).IP)
+		startIP = ip.NextIP(pa.cfg.Subnet.IP)
 	} else {
 		for i := 0; i < len(allocations); i++ {
 			nextI := i + 1

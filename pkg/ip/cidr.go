@@ -126,24 +126,6 @@ func normalizeIP(ip net.IP) net.IP {
 	return ip.To16()
 }
 
-// Network masks off the host portion of the IP, if IPNet is invalid,
-// return nil
-func Network(ipn *net.IPNet) *net.IPNet {
-	if ipn == nil {
-		return nil
-	}
-
-	maskedIP := ipn.IP.Mask(ipn.Mask)
-	if maskedIP == nil {
-		return nil
-	}
-
-	return &net.IPNet{
-		IP:   maskedIP,
-		Mask: ipn.Mask,
-	}
-}
-
 // IsBroadcast returns true if provided IP is IPv4 Broadcast ip of the network
 func IsBroadcast(ip net.IP, network *net.IPNet) bool {
 	if network == nil {
