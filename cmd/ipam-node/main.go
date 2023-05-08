@@ -58,6 +58,8 @@ func (o *Options) addFlags() {
 		"cni-bin-dir", "/host/opt/cni/bin", "CNI binary directory")
 	fs.StringVar(&o.NvIpamCNIBinFile,
 		"nv-ipam-bin-file", "/nv-ipam", "nv-ipam binary file path")
+	fs.BoolVar(&o.SkipNvIpamCNIBinaryCopy,
+		"skip-nv-ipam-binary-copy", false, "skip nv-ipam binary file copy")
 	fs.StringVar(&o.NvIpamCNIDataDir,
 		"nv-ipam-cni-data-dir", "/host/var/lib/cni/nv-ipam", "nv-ipam CNI data directory")
 	fs.StringVar(&o.NvIpamCNIDataDirHost,
@@ -67,7 +69,7 @@ func (o *Options) addFlags() {
 	fs.StringVar(&o.HostLocalBinFile,
 		"host-local-bin-file", "/host-local", "host-local binary file path")
 	fs.BoolVar(&o.SkipHostLocalBinaryCopy,
-		"skip-host-local-binary-copy", false, "skip host-loca binary file copy")
+		"skip-host-local-binary-copy", false, "skip host-local binary file copy")
 	fs.StringVar(&o.NvIpamKubeConfigFileHost,
 		"nv-ipam-kubeconfig-file-host", "/etc/cni/net.d/nv-ipam.d/nv-ipam.kubeconfig", "kubeconfig for nv-ipam")
 	fs.StringVar(&o.NvIpamLogLevel,
