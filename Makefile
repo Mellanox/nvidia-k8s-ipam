@@ -63,19 +63,21 @@ help: ## Display this help.
 lint: golangci-lint ## Lint code.
 	$(GOLANGCILINT) run --timeout 10m
 
-COVERAGE_MODE = set
-COVER_PROFILE = cover.out
+COVERAGE_MODE = atomic
+COVER_PROFILE = $(PROJECT_DIR)/cover.out
+LCOV_PATH =  $(PROJECT_DIR)/lcov.info
 
 .PHONY: unit-test
 unit-test: envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... -covermode=$(COVERAGE_MODE) -coverprofile=$(COVER_PROFILE)
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... -coverpkg=./... -covermode=$(COVERAGE_MODE) -coverprofile=$(COVER_PROFILE)
 
 .PHONY: test
 test: lint unit-test
 
 .PHONY: cov-report
-cov-report: unit-test
-	go tool cover -func=$(COVER_PROFILE)
+cov-report: gcov2lcov unit-test  ## Build test coverage report in lcov format
+	$(GCOV2LCOV) -infile $(COVER_PROFILE) -outfile $(LCOV_PATH)
+
 
 ##@ Build
 
@@ -117,10 +119,11 @@ $(LOCALBIN):
 ## Tool Binaries
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCILINT ?= $(LOCALBIN)/golangci-lint
+GCOV2LCOV ?= $(LOCALBIN)/gcov2lcov
 
 ## Tool Versions
 GOLANGCILINT_VERSION ?= v1.52.2
-
+GCOV2LCOV_VERSION ?= v1.0.5
 
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
@@ -131,6 +134,12 @@ $(ENVTEST): | $(LOCALBIN)
 golangci-lint: $(GOLANGCILINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCILINT): | $(LOCALBIN)
 	GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCILINT_VERSION)
+
+.PHONY: gcov2lcov
+gcov2lcov: $(GCOV2LCOV) ## Download gcov2lcov locally if necessary.
+$(GCOV2LCOV): | $(LOCALBIN)
+	GOBIN=$(LOCALBIN) go install github.com/jandelgado/gcov2lcov@$(GCOV2LCOV_VERSION)
+
 
 .PHONY: clean
 clean: ## Remove downloaded tools and compiled binaries
