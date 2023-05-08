@@ -82,7 +82,12 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	expectedAlloc, err := r.Allocator.Allocate(ctx, node.Name)
 	if err != nil {
 		if errors.Is(allocator.ErrNoFreeRanges, err) {
-			return r.cleanAnnotation(ctx, node)
+			_, err := r.cleanAnnotation(ctx, node)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+			// keep retrying to allocated IP
+			return ctrl.Result{RequeueAfter: time.Second * 5}, nil
 		}
 		return ctrl.Result{}, err
 	}

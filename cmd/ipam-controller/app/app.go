@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/term"
 	"k8s.io/klog/v2"
@@ -62,7 +63,11 @@ func NewControllerCommand() *cobra.Command {
 			if err := opts.Validate(); err != nil {
 				return fmt.Errorf("invalid config: %v", err)
 			}
-			return RunController(logr.NewContext(ctx, klog.NewKlogr()), opts)
+			conf, err := ctrl.GetConfig()
+			if err != nil {
+				return fmt.Errorf("failed to read config for k8s client: %v", err)
+			}
+			return RunController(logr.NewContext(ctx, klog.NewKlogr()), conf, opts)
 		},
 		Args: func(cmd *cobra.Command, args []string) error {
 			for _, arg := range args {
@@ -88,7 +93,7 @@ func NewControllerCommand() *cobra.Command {
 }
 
 // RunController start IPAM controller with provided options
-func RunController(ctx context.Context, opts *options.Options) error {
+func RunController(ctx context.Context, config *rest.Config, opts *options.Options) error {
 	logger := logr.FromContextOrDiscard(ctx)
 	ctrl.SetLogger(logger)
 
@@ -103,13 +108,7 @@ func RunController(ctx context.Context, opts *options.Options) error {
 		return err
 	}
 
-	conf, err := ctrl.GetConfig()
-	if err != nil {
-		logger.Error(err, "failed to read config for k8s client")
-		return err
-	}
-
-	mgr, err := ctrl.NewManager(conf, ctrl.Options{
+	mgr, err := ctrl.NewManager(config, ctrl.Options{
 		Scheme: scheme,
 		NewCache: cache.BuilderWithOptions(cache.Options{
 			SelectorsByObject: cache.SelectorsByObject{&corev1.ConfigMap{}: cache.ObjectSelector{

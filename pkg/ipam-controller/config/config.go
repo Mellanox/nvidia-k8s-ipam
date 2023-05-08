@@ -78,15 +78,13 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("IP pool subnet contains less available IPs then " +
 				"requested by perNodeBlockSize parameter")
 		}
-		if pool.Gateway != "" {
-			parsedGW := net.ParseIP(pool.Gateway)
-			if len(parsedGW) == 0 {
-				return fmt.Errorf("IP pool contains invalid gateway configuration: invalid IP")
-			}
-			if !network.Contains(parsedGW) {
-				return fmt.Errorf("IP pool contains invalid gateway configuration: " +
-					"gateway is outside of the subnet")
-			}
+		parsedGW := net.ParseIP(pool.Gateway)
+		if len(parsedGW) == 0 {
+			return fmt.Errorf("IP pool contains invalid gateway configuration: invalid IP")
+		}
+		if !network.Contains(parsedGW) {
+			return fmt.Errorf("IP pool contains invalid gateway configuration: " +
+				"gateway is outside of the subnet")
 		}
 	}
 	return nil
