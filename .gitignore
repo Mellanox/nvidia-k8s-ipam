@@ -9,6 +9,8 @@ build/
 testbin/*
 .gocache
 
+# Golang vendored dependencies
+vendor/
 
 # Test binary, build with `go test -c`
 *.test
