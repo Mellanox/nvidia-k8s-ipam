@@ -136,7 +136,7 @@ func (pa *poolAllocator) Deallocate(ctx context.Context, node string) {
 
 // Load loads range to the pool allocator with validation for conflicts
 func (pa *poolAllocator) Load(ctx context.Context, allocData nodeAllocationInfo) error {
-	log := pa.getLog(ctx, pa.cfg)
+	log := pa.getLog(ctx, pa.cfg).WithValues("node", allocData.Node)
 	if err := pa.checkAllocation(allocData); err != nil {
 		log.Info("range check failed", "reason", err.Error())
 		return err
@@ -151,6 +151,7 @@ func (pa *poolAllocator) Load(ctx context.Context, allocData nodeAllocationInfo)
 			return err
 		}
 	}
+	log.Info("data loaded", "startIP", allocData.StartIP, "endIP", allocData.EndIP)
 	pa.allocations[allocData.Node] = allocData.allocatedRange
 	return nil
 }
@@ -238,21 +239,27 @@ func (a *Allocator) ConfigureAndLoadAllocations(ctx context.Context, configs []A
 	a.configure(ctx, configs)
 	for i := range nodes {
 		node := nodes[i]
+		nodeLog := log.WithValues("node", node.Name)
 		nodePoolMgr, err := pool.NewManagerImpl(&node)
 		if err != nil {
-			log.Info("skip loading data from the node", "reason", err.Error())
+			nodeLog.Info("skip loading data from the node", "reason", err.Error())
 			continue
 		}
 		// load allocators only for know pools (pools which are defined in the config)
 		for poolName, poolData := range a.allocators {
 			nodeIPPoolConfig := nodePoolMgr.GetPoolByName(poolName)
 			allocInfo, err := ipPoolConfigToNodeAllocationInfo(node.Name, nodeIPPoolConfig)
+			logErr := func(err error) {
+				nodeLog.Info("ignore allocation info from node",
+					"pool", poolName, "reason", err.Error())
+			}
 			if err != nil {
-				log.Info("ignore allocation info from node", "reason", err.Error())
+				logErr(err)
 				continue
 			}
 
 			if err := poolData.Load(ctx, allocInfo); err != nil {
+				logErr(err)
 				continue
 			}
 			a.allocators[poolName] = poolData
