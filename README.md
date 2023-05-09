@@ -109,43 +109,49 @@ ipam-controller accepts configuration using command line flags and K8s configMap
 ```text
 Logging flags:
 
-      --log-flush-frequency duration                                                                                                                                                                                   
+      --log-flush-frequency duration                                                                                                                                                           
                 Maximum number of seconds between log flushes (default 5s)
-      --log-json-info-buffer-size quantity                                                                                                                                                                             
-                [Alpha] In JSON format with split output streams, the info messages can be buffered for a while to increase performance. The default value of zero bytes disables buffering. The size can be specified as
-                number of bytes (512), multiples of 1000 (1K), multiples of 1024 (2Ki), or powers of those (3M, 4G, 5Mi, 6Gi). Enable the LoggingAlphaOptions feature gate to use this.
-      --log-json-split-stream                                                                                                                                                                                          
-                [Alpha] In JSON format, write error messages to stderr and info messages to stdout. The default is to write a single stream to stdout. Enable the LoggingAlphaOptions feature gate to use this.
-      --logging-format string                                                                                                                                                                                          
+      --log-json-info-buffer-size quantity                                                                                                                                                     
+                [Alpha] In JSON format with split output streams, the info messages can be buffered for a while to increase performance. The default value of zero bytes disables buffering. The
+                size can be specified as number of bytes (512), multiples of 1000 (1K), multiples of 1024 (2Ki), or powers of those (3M, 4G, 5Mi, 6Gi). Enable the LoggingAlphaOptions feature
+                gate to use this.
+      --log-json-split-stream                                                                                                                                                                  
+                [Alpha] In JSON format, write error messages to stderr and info messages to stdout. The default is to write a single stream to stdout. Enable the LoggingAlphaOptions feature gate
+                to use this.
+      --logging-format string                                                                                                                                                                  
                 Sets the log format. Permitted formats: "json" (gated by LoggingBetaOptions), "text". (default "text")
-  -v, --v Level                                                                                                                                                                                                        
+  -v, --v Level                                                                                                                                                                                
                 number for the log level verbosity
-      --vmodule pattern=N,...                                                                                                                                                                                          
+      --vmodule pattern=N,...                                                                                                                                                                  
                 comma-separated list of pattern=N settings for file-filtered logging (only works for text log format)
 
 Common flags:
 
-      --feature-gates mapStringBool                                                                                                                                                                                    
+      --feature-gates mapStringBool                                                                                                                                                            
                 A set of key=value pairs that describe feature gates for alpha/experimental features. Options are:
                 AllAlpha=true|false (ALPHA - default=false)
                 AllBeta=true|false (BETA - default=false)
                 ContextualLogging=true|false (ALPHA - default=false)
                 LoggingAlphaOptions=true|false (ALPHA - default=false)
                 LoggingBetaOptions=true|false (BETA - default=true)
-      --version                                                                                                                                                                                                        
+      --version                                                                                                                                                                                
                 print binary version and exit
 
 Controller flags:
 
-      --config-name string                                                                                                                                                                                             
+      --config-name string                                                                                                                                                                     
                 The name of the ConfigMap which holds controller configuration (default "nvidia-k8s-ipam-config")
-      --config-namespace string                                                                                                                                                                                        
+      --config-namespace string                                                                                                                                                                
                 The name of the namespace where ConfigMap with controller configuration exist (default "kube-system")
-      --health-probe-bind-address string                                                                                                                                                                               
+      --health-probe-bind-address string                                                                                                                                                       
                 The address the probe endpoint binds to. (default ":8081")
-      --kubeconfig string                                                                                                                                                                                              
+      --kubeconfig string                                                                                                                                                                      
                 Paths to a kubeconfig. Only required if out-of-cluster.
-      --metrics-bind-address string                                                                                                                                                                                    
+      --leader-elect                                                                                                                                                                           
+                Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.
+      --leader-elect-namespace string                                                                                                                                                          
+                Determines the namespace in which the leader election resource will be created. (default "kube-system")
+      --metrics-bind-address string                                                                                                                                                            
                 The address the metric endpoint binds to. (default ":8080")
 ```
 

@@ -121,6 +121,7 @@ func RunController(ctx context.Context, config *rest.Config, opts *options.Optio
 		Port:                          9443,
 		HealthProbeBindAddress:        opts.ProbeAddr,
 		LeaderElection:                opts.EnableLeaderElection,
+		LeaderElectionNamespace:       opts.LeaderElectionNamespace,
 		LeaderElectionID:              "dd1643cf.nvidia.com",
 		LeaderElectionReleaseOnCancel: true,
 	})
