@@ -25,23 +25,25 @@ import (
 // New initialize and return new Options object
 func New() *Options {
 	return &Options{
-		Options:              *cmdoptions.New(),
-		MetricsAddr:          ":8080",
-		ProbeAddr:            ":8081",
-		EnableLeaderElection: false,
-		ConfigMapName:        "nvidia-k8s-ipam-config",
-		ConfigMapNamespace:   "kube-system",
+		Options:                 *cmdoptions.New(),
+		MetricsAddr:             ":8080",
+		ProbeAddr:               ":8081",
+		EnableLeaderElection:    false,
+		LeaderElectionNamespace: "kube-system",
+		ConfigMapName:           "nvidia-k8s-ipam-config",
+		ConfigMapNamespace:      "kube-system",
 	}
 }
 
 // Options holds command line options for controller
 type Options struct {
 	cmdoptions.Options
-	MetricsAddr          string
-	ProbeAddr            string
-	EnableLeaderElection bool
-	ConfigMapName        string
-	ConfigMapNamespace   string
+	MetricsAddr             string
+	ProbeAddr               string
+	EnableLeaderElection    bool
+	LeaderElectionNamespace string
+	ConfigMapName           string
+	ConfigMapNamespace      string
 }
 
 // AddNamedFlagSets register flags for common options in NamedFlagSets
@@ -61,6 +63,9 @@ func (o *Options) AddNamedFlagSets(sharedFS *cliflag.NamedFlagSets) {
 	controllerFS.BoolVar(&o.EnableLeaderElection, "leader-elect", o.EnableLeaderElection,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	controllerFS.StringVar(&o.LeaderElectionNamespace, "leader-elect-namespace", o.LeaderElectionNamespace,
+		"Determines the namespace in which the leader "+
+			"election resource will be created.")
 	controllerFS.StringVar(&o.ConfigMapName, "config-name",
 		o.ConfigMapName, "The name of the ConfigMap which holds controller configuration")
 	controllerFS.StringVar(&o.ConfigMapNamespace, "config-namespace",

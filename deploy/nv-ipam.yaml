@@ -132,6 +132,25 @@ rules:
       - get
       - list
       - watch
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -175,6 +194,15 @@ spec:
       priorityClassName: system-cluster-critical
       serviceAccountName: nv-ipam-controller
       affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: name
+                    operator: In
+                    values:
+                      - nv-ipam-controller
+              topologyKey: "kubernetes.io/hostname"
         nodeAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
             - weight: 1
@@ -209,6 +237,8 @@ spec:
           args:
             - --config-name=nvidia-k8s-ipam-config
             - --config-namespace=$(POD_NAMESPACE)
+            - --leader-elect=true
+            - --leader-elect-namespace=$(POD_NAMESPACE)
           env:
             - name: POD_NAMESPACE
               valueFrom:
