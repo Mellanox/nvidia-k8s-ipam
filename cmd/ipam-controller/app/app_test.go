@@ -101,7 +101,7 @@ func updateNode(node *corev1.Node) *corev1.Node {
 
 func getRangeFromNode(nodeName string) map[string]*pool.IPPool {
 	node := getNode(nodeName)
-	mgr, err := pool.NewManagerImpl(node)
+	mgr, err := pool.NewManager(node)
 	if err != nil {
 		return nil
 	}

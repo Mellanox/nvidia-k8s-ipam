@@ -240,7 +240,7 @@ func (a *Allocator) ConfigureAndLoadAllocations(ctx context.Context, configs []A
 	for i := range nodes {
 		node := nodes[i]
 		nodeLog := log.WithValues("node", node.Name)
-		nodePoolMgr, err := pool.NewManagerImpl(&node)
+		nodePoolMgr, err := pool.NewManager(&node)
 		if err != nil {
 			nodeLog.Info("skip loading data from the node", "reason", err.Error())
 			continue

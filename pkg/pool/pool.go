@@ -33,17 +33,17 @@ type IPPool struct {
 }
 
 type Manager interface {
-	// GetPoolByName returns IPPool for the provided pool name or nil if pool doesnt exist
+	// GetPoolByName returns IPPool for the provided pool name or nil if the pool doesn't exist
 	GetPoolByName(name string) *IPPool
 	// GetPools returns map with information about all pools
 	GetPools() map[string]*IPPool
 }
 
-type ManagerImpl struct {
+type managerImpl struct {
 	poolByName map[string]*IPPool
 }
 
-func NewManagerImpl(node *v1.Node) (*ManagerImpl, error) {
+func NewManager(node *v1.Node) (Manager, error) {
 	if node == nil {
 		return nil, fmt.Errorf("nil node provided")
 	}
@@ -63,17 +63,17 @@ func NewManagerImpl(node *v1.Node) (*ManagerImpl, error) {
 		pool.Name = poolName
 	}
 
-	return &ManagerImpl{
+	return &managerImpl{
 		poolByName: poolByName,
 	}, nil
 }
 
 // GetPoolByName implements Manager interface
-func (pm *ManagerImpl) GetPoolByName(name string) *IPPool {
+func (pm *managerImpl) GetPoolByName(name string) *IPPool {
 	return pm.poolByName[name]
 }
 
 // GetPools implements Manager interface
-func (pm *ManagerImpl) GetPools() map[string]*IPPool {
+func (pm *managerImpl) GetPools() map[string]*IPPool {
 	return pm.poolByName
 }

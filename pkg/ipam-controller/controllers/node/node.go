@@ -74,7 +74,7 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 
 	var existingNodeAlloc map[string]*pool.IPPool
-	nodeAllocManager, err := pool.NewManagerImpl(node)
+	nodeAllocManager, err := pool.NewManager(node)
 	if err == nil {
 		existingNodeAlloc = nodeAllocManager.GetPools()
 	}

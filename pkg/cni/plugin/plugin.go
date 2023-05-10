@@ -59,12 +59,12 @@ func (p *Plugin) CmdAdd(args *skel.CmdArgs) error {
 	logCall("ADD", args, conf.IPAM)
 
 	// build host-local config
-	pool, err := getPoolbyName(conf.IPAM.K8sClient, conf.IPAM.NodeName, conf.IPAM.PoolName)
+	ipPool, err := getPoolbyName(conf.IPAM.K8sClient, conf.IPAM.NodeName, conf.IPAM.PoolName)
 	if err != nil {
 		return fmt.Errorf("failed to get pool by name. %w", err)
 	}
 
-	hlc := types.HostLocalNetConfFromNetConfAndPool(conf, pool)
+	hlc := types.HostLocalNetConfFromNetConfAndPool(conf, ipPool)
 	data, err := json.Marshal(hlc)
 	if err != nil {
 		return fmt.Errorf("failed to marshal host-local net conf. %w", err)
@@ -93,12 +93,12 @@ func (p *Plugin) CmdDel(args *skel.CmdArgs) error {
 	logCall("DEL", args, conf.IPAM)
 
 	// build host-local config
-	pool, err := getPoolbyName(conf.IPAM.K8sClient, conf.IPAM.NodeName, conf.IPAM.PoolName)
+	ipPool, err := getPoolbyName(conf.IPAM.K8sClient, conf.IPAM.NodeName, conf.IPAM.PoolName)
 	if err != nil {
 		return fmt.Errorf("failed to get pool by name. %w", err)
 	}
 
-	hlc := types.HostLocalNetConfFromNetConfAndPool(conf, pool)
+	hlc := types.HostLocalNetConfFromNetConfAndPool(conf, ipPool)
 	data, err := json.Marshal(hlc)
 	if err != nil {
 		return fmt.Errorf("failed to marshal host-local net conf. %w", err)
@@ -127,12 +127,12 @@ func (p *Plugin) CmdCheck(args *skel.CmdArgs) error {
 	logCall("CHECK", args, conf.IPAM)
 
 	// build host-local config
-	pool, err := getPoolbyName(conf.IPAM.K8sClient, conf.IPAM.NodeName, conf.IPAM.PoolName)
+	ipPool, err := getPoolbyName(conf.IPAM.K8sClient, conf.IPAM.NodeName, conf.IPAM.PoolName)
 	if err != nil {
 		return fmt.Errorf("failed to get pool by name. %w", err)
 	}
 
-	hlc := types.HostLocalNetConfFromNetConfAndPool(conf, pool)
+	hlc := types.HostLocalNetConfFromNetConfAndPool(conf, ipPool)
 	data, err := json.Marshal(hlc)
 	if err != nil {
 		return fmt.Errorf("failed to marshal host-local net conf. %w", err)
@@ -176,14 +176,14 @@ func getPoolbyName(kclient *kubernetes.Clientset, nodeName, poolName string) (*p
 		return nil, fmt.Errorf("failed to get node %s from k8s API. %w", nodeName, err)
 	}
 
-	pm, err := pool.NewManagerImpl(node)
+	pm, err := pool.NewManager(node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pools from node %s. %w", nodeName, err)
 	}
 
-	pool := pm.GetPoolByName(poolName)
-	if pool == nil {
+	ipPool := pm.GetPoolByName(poolName)
+	if ipPool == nil {
 		return nil, fmt.Errorf("failed to get pools from node %s. pool %s not found", nodeName, poolName)
 	}
-	return pool, nil
+	return ipPool, nil
 }
