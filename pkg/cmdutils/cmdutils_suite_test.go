@@ -11,8 +11,7 @@
  limitations under the License.
 */
 
-// Package cmdutils is the package that contains utilities for nv-ipam command
-package cmdutils
+package cmdutils_test
 
 import (
 	. "github.com/onsi/ginkgo/v2"
@@ -21,7 +20,7 @@ import (
 	"testing"
 )
 
-func TestServer(t *testing.T) {
+func TestCmdUtils(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "cmdutils")
+	RunSpecs(t, "cmdutils Suite")
 }
