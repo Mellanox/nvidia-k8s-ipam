@@ -53,7 +53,7 @@ var _ = Describe("Types Tests", func() {
 
 			// Load config
 			testConf := fmt.Sprintf(`{"name": "my-net", "ipam": {"confDir": %q}}`, testConfDir)
-			conf, err := types.LoadConf([]byte(testConf))
+			conf, err := types.NewConfLoader().LoadConf([]byte(testConf))
 
 			// Validate
 			Expect(err).ToNot(HaveOccurred())
@@ -81,7 +81,7 @@ var _ = Describe("Types Tests", func() {
 
 			// Load config
 			testConf := fmt.Sprintf(`{"name": "my-net", "ipam": {"confDir": %q}}`, testConfDir)
-			conf, err := types.LoadConf([]byte(testConf))
+			conf, err := types.NewConfLoader().LoadConf([]byte(testConf))
 
 			// Validate
 			Expect(err).ToNot(HaveOccurred())
@@ -106,7 +106,7 @@ var _ = Describe("Types Tests", func() {
 
 			// Load config
 			testConf := fmt.Sprintf(`{"name": "my-net", "ipam": {"confDir": %q, "poolName": "my-pool", "logLevel": "error"}}`, testConfDir)
-			conf, err := types.LoadConf([]byte(testConf))
+			conf, err := types.NewConfLoader().LoadConf([]byte(testConf))
 
 			// Validate
 			Expect(err).ToNot(HaveOccurred())
@@ -119,12 +119,12 @@ var _ = Describe("Types Tests", func() {
 		})
 
 		It("Fails if config is invalid json", func() {
-			_, err := types.LoadConf([]byte("{garbage%^&*"))
+			_, err := types.NewConfLoader().LoadConf([]byte("{garbage%^&*"))
 			Expect(err).To(HaveOccurred())
 		})
 
 		It("Fails if config does not contain ipam key", func() {
-			_, err := types.LoadConf([]byte(`{"name": "my-net", "type": "sriov"}`))
+			_, err := types.NewConfLoader().LoadConf([]byte(`{"name": "my-net", "type": "sriov"}`))
 			Expect(err).To(HaveOccurred())
 		})
 	})

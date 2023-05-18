@@ -44,6 +44,14 @@ const (
 	ConfFileName = "nv-ipam.conf"
 )
 
+// ConfLoader loads CNI configuration
+//
+//go:generate mockery --name ConfLoader
+type ConfLoader interface {
+	// LoadConf loads CNI configuration from Json data
+	LoadConf(bytes []byte) (*NetConf, error)
+}
+
 // IPAMConf is the configuration supported by our CNI plugin
 type IPAMConf struct {
 	types.IPAM
@@ -58,7 +66,7 @@ type IPAMConf struct {
 
 	// internal configuration
 	NodeName  string
-	K8sClient *kubernetes.Clientset
+	K8sClient kubernetes.Interface
 }
 
 // NetConf is CNI network config
@@ -68,8 +76,14 @@ type NetConf struct {
 	IPAM       *IPAMConf `json:"ipam"`
 }
 
+type confLoader struct{}
+
+func NewConfLoader() ConfLoader {
+	return &confLoader{}
+}
+
 // LoadConf Loads NetConf from json string provided as []byte
-func LoadConf(bytes []byte) (*NetConf, error) {
+func (cl *confLoader) LoadConf(bytes []byte) (*NetConf, error) {
 	n := &NetConf{}
 
 	if err := json.Unmarshal(bytes, &n); err != nil {
@@ -86,9 +100,9 @@ func LoadConf(bytes []byte) (*NetConf, error) {
 
 	// overlay config from conf file if exists.
 	confFilePath := filepath.Join(n.IPAM.ConfDir, ConfFileName)
-	fileConf, err := LoadFromConfFile(confFilePath)
+	fileConf, err := cl.loadFromConfFile(confFilePath)
 	if err == nil {
-		overlayConf(fileConf, n.IPAM)
+		cl.overlayConf(fileConf, n.IPAM)
 	} else if !os.IsNotExist(err) {
 		return nil, fmt.Errorf("failed to read/parse config file(%s). %w", confFilePath, err)
 	}
@@ -103,7 +117,7 @@ func LoadConf(bytes []byte) (*NetConf, error) {
 		LogFile:    DefaultLogFile,
 		LogLevel:   "info",
 	}
-	overlayConf(defaultConf, n.IPAM)
+	cl.overlayConf(defaultConf, n.IPAM)
 
 	// get Node name
 	p := filepath.Join(n.IPAM.ConfDir, K8sNodeNameFile)
@@ -125,8 +139,8 @@ func LoadConf(bytes []byte) (*NetConf, error) {
 	return n, nil
 }
 
-// LoadFromConfFile returns *IPAMConf with values from config file located in filePath.
-func LoadFromConfFile(filePath string) (*IPAMConf, error) {
+// loadFromConfFile returns *IPAMConf with values from config file located in filePath.
+func (cl *confLoader) loadFromConfFile(filePath string) (*IPAMConf, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, err
@@ -143,7 +157,7 @@ func LoadFromConfFile(filePath string) (*IPAMConf, error) {
 
 // overlayConf overlays IPAMConf "from" onto "to"
 // fields in to are overlayed if they are empty in "to".
-func overlayConf(from, to *IPAMConf) {
+func (cl *confLoader) overlayConf(from, to *IPAMConf) {
 	if to.ConfDir == "" {
 		to.ConfDir = from.ConfDir
 	}

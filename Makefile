@@ -111,6 +111,10 @@ KIND_CLUSTER ?= kind
 kind-load-image:  ## Load ipam image to kind cluster
 	kind load docker-image --name $(KIND_CLUSTER) $(IMG)
 
+.PHONY: generate-mocks
+generate-mocks:  ## generate mock objects
+	PATH=$(PATH):$(LOCALBIN) go generate ./...
+
 ## Location to install dependencies to
 LOCALBIN ?= $(PROJECT_DIR)/bin
 $(LOCALBIN):
@@ -120,10 +124,12 @@ $(LOCALBIN):
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCILINT ?= $(LOCALBIN)/golangci-lint
 GCOV2LCOV ?= $(LOCALBIN)/gcov2lcov
+MOCKERY ?= $(LOCALBIN)/mockery
 
 ## Tool Versions
 GOLANGCILINT_VERSION ?= v1.52.2
 GCOV2LCOV_VERSION ?= v1.0.5
+MOCKERY_VERSION ?= v2.27.1
 
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
@@ -140,6 +146,10 @@ gcov2lcov: $(GCOV2LCOV) ## Download gcov2lcov locally if necessary.
 $(GCOV2LCOV): | $(LOCALBIN)
 	GOBIN=$(LOCALBIN) go install github.com/jandelgado/gcov2lcov@$(GCOV2LCOV_VERSION)
 
+.PHONY: mockery
+mockery: $(MOCKERY) ## Download gcov2lcov locally if necessary.
+$(MOCKERY): | $(LOCALBIN)
+	GOBIN=$(LOCALBIN) go install github.com/vektra/mockery/v2@$(MOCKERY_VERSION)
 
 .PHONY: clean
 clean: ## Remove downloaded tools and compiled binaries
