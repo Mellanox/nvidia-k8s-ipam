@@ -37,6 +37,8 @@ GO_BUILD_OPTS ?= CGO_ENABLED=0 GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH)
 GO_LDFLAGS = $(VERSION_LDFLAGS)
 
 
+PKGS = $(or $(PKG),$(shell cd $(PROJECT_DIR) && go list ./... | grep -v "^nvidia-k8s-ipam/vendor/" | grep -v ".*/mocks"))
+
 .PHONY: all
 all: build
 
@@ -69,7 +71,7 @@ LCOV_PATH =  $(PROJECT_DIR)/lcov.info
 
 .PHONY: unit-test
 unit-test: envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... -coverpkg=./... -covermode=$(COVERAGE_MODE) -coverprofile=$(COVER_PROFILE)
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test -covermode=$(COVERAGE_MODE) -coverprofile=$(COVER_PROFILE) $(PKGS)
 
 .PHONY: test
 test: lint unit-test
