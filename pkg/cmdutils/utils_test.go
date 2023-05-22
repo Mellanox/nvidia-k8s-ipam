@@ -29,14 +29,7 @@ var _ = Describe("cmdutils testing", func() {
 	)
 
 	BeforeEach(func() {
-		var err error
-		tmpDir, err = os.MkdirTemp("", "nv_ipam_thin_entrypoint_tmp")
-		Expect(err).NotTo(HaveOccurred())
-	})
-
-	AfterEach(func() {
-		err := os.RemoveAll(tmpDir)
-		Expect(err).NotTo(HaveOccurred())
+		tmpDir = GinkgoT().TempDir()
 	})
 
 	It("Run CopyFileAtomic()", func() {

@@ -149,7 +149,7 @@ $(GCOV2LCOV): | $(LOCALBIN)
 	GOBIN=$(LOCALBIN) go install github.com/jandelgado/gcov2lcov@$(GCOV2LCOV_VERSION)
 
 .PHONY: mockery
-mockery: $(MOCKERY) ## Download gcov2lcov locally if necessary.
+mockery: $(MOCKERY) ## Download mockery locally if necessary.
 $(MOCKERY): | $(LOCALBIN)
 	GOBIN=$(LOCALBIN) go install github.com/vektra/mockery/v2@$(MOCKERY_VERSION)
 

@@ -51,7 +51,7 @@ var _ = Describe("pool tests", func() {
 			Expect(err).To(HaveOccurred())
 		})
 
-		It("Fails to create Manager if node has empty ip-pool annotation", func() {
+		It("Fails to create Manager if node has empty/invalid ip-pool annotation", func() {
 			n := v1.Node{}
 			emptyAnnot := map[string]string{
 				pool.IPBlocksAnnotation: "",
