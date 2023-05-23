@@ -11,16 +11,16 @@
  limitations under the License.
 */
 
-package cmdutils_test
+package k8sclient_test
 
 import (
+	"testing"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"testing"
 )
 
-func TestCmdUtils(t *testing.T) {
+func TestK8sClient(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "cmdutils Suite")
+	RunSpecs(t, "K8sClient Suite")
 }

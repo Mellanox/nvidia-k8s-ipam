@@ -11,7 +11,6 @@
  limitations under the License.
 */
 
-// Package cmdutils is the package that contains utilities for multus command
 package cmdutils
 
 import (

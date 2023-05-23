@@ -11,7 +11,7 @@
  limitations under the License.
 */
 
-package cmdutils_test
+package pool_test
 
 import (
 	. "github.com/onsi/ginkgo/v2"
@@ -20,7 +20,7 @@ import (
 	"testing"
 )
 
-func TestCmdUtils(t *testing.T) {
+func TestPool(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "cmdutils Suite")
+	RunSpecs(t, "pool Suite")
 }

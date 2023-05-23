@@ -21,9 +21,10 @@ import (
 )
 
 const (
-	ipBlocksAnnotation = "ipam.nvidia.com/ip-blocks"
+	IPBlocksAnnotation = "ipam.nvidia.com/ip-blocks"
 )
 
+// IPPool represents a block of IPs from a given Subnet
 type IPPool struct {
 	Name    string `json:"-"`
 	Subnet  string `json:"subnet"`
@@ -32,6 +33,7 @@ type IPPool struct {
 	Gateway string `json:"gateway"`
 }
 
+// Manager is an interface to manage IPPools
 type Manager interface {
 	// GetPoolByName returns IPPool for the provided pool name or nil if pool doesnt exist
 	GetPoolByName(name string) *IPPool
@@ -48,15 +50,15 @@ func NewManagerImpl(node *v1.Node) (*ManagerImpl, error) {
 		return nil, fmt.Errorf("nil node provided")
 	}
 
-	blocks, ok := node.Annotations[ipBlocksAnnotation]
+	blocks, ok := node.Annotations[IPBlocksAnnotation]
 	if !ok {
-		return nil, fmt.Errorf("%s node annotation not found", ipBlocksAnnotation)
+		return nil, fmt.Errorf("%s node annotation not found", IPBlocksAnnotation)
 	}
 
 	poolByName := make(map[string]*IPPool)
 	err := json.Unmarshal([]byte(blocks), &poolByName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse %s annotation content. %w", ipBlocksAnnotation, err)
+		return nil, fmt.Errorf("failed to parse %s annotation content. %w", IPBlocksAnnotation, err)
 	}
 
 	for poolName, pool := range poolByName {

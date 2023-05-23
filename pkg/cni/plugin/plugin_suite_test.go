@@ -11,16 +11,16 @@
  limitations under the License.
 */
 
-package cmdutils_test
+package plugin_test
 
 import (
+	"testing"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"testing"
 )
 
-func TestCmdUtils(t *testing.T) {
+func TestPlugin(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "cmdutils Suite")
+	RunSpecs(t, "Plugin Suite")
 }

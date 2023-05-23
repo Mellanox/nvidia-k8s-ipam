@@ -30,20 +30,20 @@ func SetIPBlockAnnotation(node *v1.Node, pools map[string]*IPPool) error {
 	if err != nil {
 		return fmt.Errorf("failed to serialize pools config: %v", err)
 	}
-	annotations[ipBlocksAnnotation] = string(data)
+	annotations[IPBlocksAnnotation] = string(data)
 	node.SetAnnotations(annotations)
 	return nil
 }
 
 // IPBlockAnnotationExists returns true if ip-block annotation exist
 func IPBlockAnnotationExists(node *v1.Node) bool {
-	_, exist := node.GetAnnotations()[ipBlocksAnnotation]
+	_, exist := node.GetAnnotations()[IPBlocksAnnotation]
 	return exist
 }
 
 // RemoveIPBlockAnnotation removes annotation with ip-block from the node object
 func RemoveIPBlockAnnotation(node *v1.Node) {
 	annotations := node.GetAnnotations()
-	delete(annotations, ipBlocksAnnotation)
+	delete(annotations, IPBlocksAnnotation)
 	node.SetAnnotations(annotations)
 }

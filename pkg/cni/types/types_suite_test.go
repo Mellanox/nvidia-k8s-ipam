@@ -11,16 +11,16 @@
  limitations under the License.
 */
 
-package cmdutils_test
+package types_test
 
 import (
+	"testing"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"testing"
 )
 
-func TestCmdUtils(t *testing.T) {
+func TestTypes(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "cmdutils Suite")
+	RunSpecs(t, "Types Suite")
 }

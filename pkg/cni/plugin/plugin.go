@@ -38,20 +38,59 @@ const (
 	delegateIPAMPluginName = "host-local"
 )
 
+// IPAMExecutor is an interface that executes IPAM CNI Plugin
+//
+//go:generate mockery --name IPAMExecutor
+type IPAMExecutor interface {
+	// ExecAdd executes IPAM plugin named pluginName ADD call
+	ExecAdd(pluginName string, data []byte) (cnitypes.Result, error)
+	// ExecDel executes IPAM plugin named pluginName DEL call
+	ExecDel(pluginName string, data []byte) error
+	// ExecCheck executes IPAM plugin named pluginName CHECK call
+	ExecCheck(pluginName string, data []byte) error
+}
+
+// NewIPAMExecutor creates a new instance that implements IPAMExecutor
+func NewIPAMExecutor() IPAMExecutor {
+	return &cniIpamExecutor{}
+}
+
+// cniIpamExecutor implements IPAMExecutor using cni plugins ipam package
+type cniIpamExecutor struct{}
+
+// ExecAdd implements IPAMExecutor interface
+func (ie *cniIpamExecutor) ExecAdd(pluginName string, data []byte) (cnitypes.Result, error) {
+	return ipam.ExecAdd(pluginName, data)
+}
+
+// ExecDel implements IPAMExecutor interface
+func (ie *cniIpamExecutor) ExecDel(pluginName string, data []byte) error {
+	return ipam.ExecDel(pluginName, data)
+}
+
+// ExecCheck implements IPAMExecutor interface
+func (ie *cniIpamExecutor) ExecCheck(pluginName string, data []byte) error {
+	return ipam.ExecCheck(pluginName, data)
+}
+
 func NewPlugin() *Plugin {
 	return &Plugin{
-		Name:    CNIPluginName,
-		Version: version.GetVersionString(),
+		Name:         CNIPluginName,
+		Version:      version.GetVersionString(),
+		ConfLoader:   types.NewConfLoader(),
+		IPAMExecutor: NewIPAMExecutor(),
 	}
 }
 
 type Plugin struct {
-	Name    string
-	Version string
+	Name         string
+	Version      string
+	ConfLoader   types.ConfLoader
+	IPAMExecutor IPAMExecutor
 }
 
 func (p *Plugin) CmdAdd(args *skel.CmdArgs) error {
-	conf, err := types.LoadConf(args.StdinData)
+	conf, err := p.ConfLoader.LoadConf(args.StdinData)
 	if err != nil {
 		return fmt.Errorf("failed to load config. %w", err)
 	}
@@ -76,7 +115,7 @@ func (p *Plugin) CmdAdd(args *skel.CmdArgs) error {
 	if err != nil {
 		return err
 	}
-	res, err := ipam.ExecAdd(delegateIPAMPluginName, data)
+	res, err := p.IPAMExecutor.ExecAdd(delegateIPAMPluginName, data)
 	if err != nil {
 		return fmt.Errorf("failed to exec ADD host-local CNI plugin. %w", err)
 	}
@@ -85,7 +124,7 @@ func (p *Plugin) CmdAdd(args *skel.CmdArgs) error {
 }
 
 func (p *Plugin) CmdDel(args *skel.CmdArgs) error {
-	conf, err := types.LoadConf(args.StdinData)
+	conf, err := p.ConfLoader.LoadConf(args.StdinData)
 	if err != nil {
 		return fmt.Errorf("failed to load config. %w", err)
 	}
@@ -110,7 +149,7 @@ func (p *Plugin) CmdDel(args *skel.CmdArgs) error {
 	if err != nil {
 		return err
 	}
-	err = ipam.ExecDel(delegateIPAMPluginName, data)
+	err = p.IPAMExecutor.ExecDel(delegateIPAMPluginName, data)
 	if err != nil {
 		return fmt.Errorf("failed to exec DEL host-local CNI plugin. %w", err)
 	}
@@ -119,7 +158,7 @@ func (p *Plugin) CmdDel(args *skel.CmdArgs) error {
 }
 
 func (p *Plugin) CmdCheck(args *skel.CmdArgs) error {
-	conf, err := types.LoadConf(args.StdinData)
+	conf, err := p.ConfLoader.LoadConf(args.StdinData)
 	if err != nil {
 		return fmt.Errorf("failed to load config. %w", err)
 	}
@@ -144,7 +183,7 @@ func (p *Plugin) CmdCheck(args *skel.CmdArgs) error {
 	if err != nil {
 		return err
 	}
-	err = ipam.ExecCheck(delegateIPAMPluginName, data)
+	err = p.IPAMExecutor.ExecCheck(delegateIPAMPluginName, data)
 	if err != nil {
 		return fmt.Errorf("failed to exec CHECK host-local CNI plugin. %w", err)
 	}
@@ -169,7 +208,7 @@ func logCall(cmd string, args *skel.CmdArgs, conf *types.IPAMConf) {
 	log.Debugf("CMD %s: Parsed IPAM conf: %+v", cmd, conf)
 }
 
-func getPoolbyName(kclient *kubernetes.Clientset, nodeName, poolName string) (*pool.IPPool, error) {
+func getPoolbyName(kclient kubernetes.Interface, nodeName, poolName string) (*pool.IPPool, error) {
 	// get pool info from node
 	node, err := kclient.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
 	if err != nil {
