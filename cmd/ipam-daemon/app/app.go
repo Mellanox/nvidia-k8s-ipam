@@ -18,9 +18,12 @@ package app
 import (
 	"context"
 	"fmt"
+	"net"
+	"sync"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -39,8 +42,10 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	daemonv1 "github.com/Mellanox/nvidia-k8s-ipam/api/grpc/nvidia/ipam/daemon/v1"
 	"github.com/Mellanox/nvidia-k8s-ipam/cmd/ipam-daemon/app/options"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-daemon/handlers"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/version"
 )
 
@@ -128,10 +133,72 @@ func RunDaemon(ctx context.Context, config *rest.Config, opts *options.Options) 
 		return err
 	}
 
-	if err := mgr.Start(ctx); err != nil {
-		logger.Error(err, "problem running manager")
+	grpcServer, listener, err := initGRPCServer(opts, logger)
+	if err != nil {
 		return err
 	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(3)
+
+	errCh := make(chan error, 1)
+
+	innerCtx, innerCFunc := context.WithCancel(ctx)
+	defer innerCFunc()
+
+	go func() {
+		defer wg.Done()
+		<-innerCtx.Done()
+		grpcServer.GracefulStop()
+	}()
+	go func() {
+		defer wg.Done()
+		logger.Info("start grpc server")
+		if err := grpcServer.Serve(listener); err != nil {
+			logger.Error(err, "problem start grpc server")
+			select {
+			case errCh <- err:
+			default:
+			}
+		}
+		logger.Info("grpc server stopped")
+	}()
+	go func() {
+		defer wg.Done()
+		logger.Info("start manager")
+		if err := mgr.Start(innerCtx); err != nil {
+			logger.Error(err, "problem running manager")
+			select {
+			case errCh <- err:
+			default:
+			}
+		}
+		logger.Info("manager stopped")
+	}()
+
+	select {
+	case <-ctx.Done():
+	case <-errCh:
+		innerCFunc()
+	}
+	wg.Wait()
+
 	logger.Info("IPAM daemon stopped")
 	return nil
+}
+
+func initGRPCServer(opts *options.Options, log logr.Logger) (*grpc.Server, net.Listener, error) {
+	network, address, err := options.ParseBindAddress(opts.BindAddress)
+	if err != nil {
+		return nil, nil, err
+	}
+	listener, err := net.Listen(network, address)
+	if err != nil {
+		log.Error(err, "failed to start listener for GRPC server")
+		return nil, nil, err
+	}
+	grpcServer := grpc.NewServer()
+
+	daemonv1.RegisterIPAMBackendServiceServer(grpcServer, handlers.New())
+	return grpcServer, listener, nil
 }

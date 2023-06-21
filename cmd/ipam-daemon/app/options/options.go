@@ -16,6 +16,7 @@ package options
 import (
 	goflag "flag"
 	"fmt"
+	"net/url"
 
 	cliflag "k8s.io/component-base/cli/flag"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -30,6 +31,7 @@ func New() *Options {
 		MetricsAddr: ":8080",
 		ProbeAddr:   ":8081",
 		NodeName:    "",
+		BindAddress: "tcp://:9092",
 	}
 }
 
@@ -39,24 +41,27 @@ type Options struct {
 	MetricsAddr string
 	ProbeAddr   string
 	NodeName    string
+	BindAddress string
 }
 
 // AddNamedFlagSets register flags for common options in NamedFlagSets
 func (o *Options) AddNamedFlagSets(sharedFS *cliflag.NamedFlagSets) {
 	o.Options.AddNamedFlagSets(sharedFS)
 
-	controllerFS := sharedFS.FlagSet("Controller")
+	daemonFS := sharedFS.FlagSet("Daemon")
 
 	goFS := goflag.NewFlagSet("tmp", goflag.ContinueOnError)
 	ctrl.RegisterFlags(goFS)
-	controllerFS.AddGoFlagSet(goFS)
+	daemonFS.AddGoFlagSet(goFS)
 
-	controllerFS.StringVar(&o.MetricsAddr, "metrics-bind-address", o.MetricsAddr,
+	daemonFS.StringVar(&o.MetricsAddr, "metrics-bind-address", o.MetricsAddr,
 		"The address the metric endpoint binds to.")
-	controllerFS.StringVar(&o.ProbeAddr, "health-probe-bind-address",
+	daemonFS.StringVar(&o.ProbeAddr, "health-probe-bind-address",
 		o.ProbeAddr, "The address the probe endpoint binds to.")
-	controllerFS.StringVar(&o.NodeName, "node-name",
+	daemonFS.StringVar(&o.NodeName, "node-name",
 		o.NodeName, "The name of the Node on which the daemon runs")
+	daemonFS.StringVar(&o.BindAddress, "bind-address", o.BindAddress,
+		"GPRC server bind address. e.g.: tcp://127.0.0.1:9092, unix:///var/lib/foo")
 }
 
 // Validate registered options
@@ -64,5 +69,26 @@ func (o *Options) Validate() error {
 	if len(o.NodeName) == 0 {
 		return fmt.Errorf("node-name is required parameter")
 	}
+	_, _, err := ParseBindAddress(o.BindAddress)
+	if err != nil {
+		return fmt.Errorf("bind-address is invalid: %v", err)
+	}
 	return o.Options.Validate()
+}
+
+// ParseBindAddress parses bind-address and return network and address part separately,
+// returns error if bind-address format is invalid
+func ParseBindAddress(addr string) (string, string, error) {
+	u, err := url.Parse(addr)
+	if err != nil {
+		return "", "", err
+	}
+	switch u.Scheme {
+	case "tcp":
+		return u.Scheme, u.Host, nil
+	case "unix":
+		return u.Scheme, u.Host + u.Path, nil
+	default:
+		return "", "", fmt.Errorf("unsupported scheme")
+	}
 }
