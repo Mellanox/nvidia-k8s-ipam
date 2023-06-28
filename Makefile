@@ -119,8 +119,8 @@ kind-load-image:  ## Load ipam image to kind cluster
 	kind load docker-image --name $(KIND_CLUSTER) $(IMG)
 
 .PHONY: generate-mocks
-generate-mocks:  ## generate mock objects
-	PATH=$(PATH):$(LOCALBIN) go generate ./...
+generate-mocks: mockery ## generate mock objects
+	PATH=$(LOCALBIN):$(PATH) go generate ./...
 
 ## Location to install dependencies to
 LOCALBIN ?= $(PROJECT_DIR)/bin
