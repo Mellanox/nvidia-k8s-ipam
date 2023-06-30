@@ -22,7 +22,7 @@ import (
 
 // NextIP returns IP incremented by 1, if IP is invalid, return nil
 func NextIP(ip net.IP) net.IP {
-	normalizedIP := normalizeIP(ip)
+	normalizedIP := NormalizeIP(ip)
 	if normalizedIP == nil {
 		return nil
 	}
@@ -36,7 +36,7 @@ func NextIPWithOffset(ip net.IP, offset int64) net.IP {
 	if offset < 0 {
 		return nil
 	}
-	normalizedIP := normalizeIP(ip)
+	normalizedIP := NormalizeIP(ip)
 	if normalizedIP == nil {
 		return nil
 	}
@@ -47,7 +47,7 @@ func NextIPWithOffset(ip net.IP, offset int64) net.IP {
 
 // PrevIP returns IP decremented by 1, if IP is invalid, return nil
 func PrevIP(ip net.IP) net.IP {
-	normalizedIP := normalizeIP(ip)
+	normalizedIP := NormalizeIP(ip)
 	if normalizedIP == nil {
 		return nil
 	}
@@ -62,8 +62,8 @@ func PrevIP(ip net.IP) net.IP {
 // a > b : 1
 // incomparable : -2
 func Cmp(a, b net.IP) int {
-	normalizedA := normalizeIP(a)
-	normalizedB := normalizeIP(b)
+	normalizedA := NormalizeIP(a)
+	normalizedB := NormalizeIP(b)
 
 	if len(normalizedA) == len(normalizedB) && len(normalizedA) != 0 {
 		return ipToInt(normalizedA).Cmp(ipToInt(normalizedB))
@@ -76,8 +76,8 @@ func Cmp(a, b net.IP) int {
 // returns -1 if result is negative
 // returns -2 if result is too large or IPs are not valid addresses
 func Distance(a, b net.IP) int64 {
-	normalizedA := normalizeIP(a)
-	normalizedB := normalizeIP(b)
+	normalizedA := NormalizeIP(a)
+	normalizedB := NormalizeIP(b)
 
 	if len(normalizedA) == len(normalizedB) && len(normalizedA) != 0 {
 		count := big.NewInt(0).Sub(ipToInt(normalizedB), ipToInt(normalizedA))
@@ -115,11 +115,11 @@ func intToIP(i *big.Int, isIPv6 bool) net.IP {
 	return append(make([]byte, zeroes), intBytes...)
 }
 
-// normalizeIP will normalize IP by family,
+// NormalizeIP will normalize IP by family,
 // IPv4 : 4-byte form
 // IPv6 : 16-byte form
 // others : nil
-func normalizeIP(ip net.IP) net.IP {
+func NormalizeIP(ip net.IP) net.IP {
 	if ipTo4 := ip.To4(); ipTo4 != nil {
 		return ipTo4
 	}
