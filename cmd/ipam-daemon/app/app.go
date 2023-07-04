@@ -45,7 +45,12 @@ import (
 	daemonv1 "github.com/Mellanox/nvidia-k8s-ipam/api/grpc/nvidia/ipam/daemon/v1"
 	"github.com/Mellanox/nvidia-k8s-ipam/cmd/ipam-daemon/app/options"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-daemon/allocator"
+	nodectrl "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-daemon/controllers/node"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-daemon/grpc/middleware"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-daemon/handlers"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-daemon/store"
+	poolPkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/version"
 )
 
@@ -93,6 +98,8 @@ func NewControllerCommand() *cobra.Command {
 }
 
 // RunDaemon start IPAM daemon with provided options
+//
+//nolint:funlen
 func RunDaemon(ctx context.Context, config *rest.Config, opts *options.Options) error {
 	logger := logr.FromContextOrDiscard(ctx)
 	ctrl.SetLogger(logger)
@@ -107,6 +114,8 @@ func RunDaemon(ctx context.Context, config *rest.Config, opts *options.Options) 
 		return err
 	}
 
+	poolManager := poolPkg.NewManager()
+
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
 		Scheme: scheme,
 		NewCache: cache.BuilderWithOptions(cache.Options{
@@ -118,9 +127,16 @@ func RunDaemon(ctx context.Context, config *rest.Config, opts *options.Options) 
 		Port:                   9443,
 		HealthProbeBindAddress: opts.ProbeAddr,
 	})
-
 	if err != nil {
-		logger.Error(err, "unable to start manager")
+		logger.Error(err, "unable to initialize manager")
+		return err
+	}
+	if err = (&nodectrl.NodeReconciler{
+		PoolManager: poolManager,
+		Client:      mgr.GetClient(),
+		Scheme:      mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		logger.Error(err, "unable to create controller", "controller", "Node")
 		return err
 	}
 
@@ -133,7 +149,7 @@ func RunDaemon(ctx context.Context, config *rest.Config, opts *options.Options) 
 		return err
 	}
 
-	grpcServer, listener, err := initGRPCServer(opts, logger)
+	grpcServer, listener, err := initGRPCServer(opts, logger, poolManager)
 	if err != nil {
 		return err
 	}
@@ -187,7 +203,8 @@ func RunDaemon(ctx context.Context, config *rest.Config, opts *options.Options) 
 	return nil
 }
 
-func initGRPCServer(opts *options.Options, log logr.Logger) (*grpc.Server, net.Listener, error) {
+func initGRPCServer(opts *options.Options,
+	log logr.Logger, poolManager poolPkg.Manager) (*grpc.Server, net.Listener, error) {
 	network, address, err := options.ParseBindAddress(opts.BindAddress)
 	if err != nil {
 		return nil, nil, err
@@ -197,8 +214,12 @@ func initGRPCServer(opts *options.Options, log logr.Logger) (*grpc.Server, net.L
 		log.Error(err, "failed to start listener for GRPC server")
 		return nil, nil, err
 	}
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(
+		middleware.SetLoggerMiddleware,
+		middleware.LogRequestMiddleware,
+		middleware.LogResponseMiddleware))
 
-	daemonv1.RegisterIPAMBackendServiceServer(grpcServer, handlers.New())
+	daemonv1.RegisterIPAMBackendServiceServer(grpcServer,
+		handlers.New(poolManager, store.NewManager(opts.StoreFile), allocator.NewIPAllocator))
 	return grpcServer, listener, nil
 }

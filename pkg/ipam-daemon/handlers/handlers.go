@@ -15,14 +15,26 @@ package handlers
 
 import (
 	daemonv1 "github.com/Mellanox/nvidia-k8s-ipam/api/grpc/nvidia/ipam/daemon/v1"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-daemon/allocator"
+	storePkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-daemon/store"
+	poolPkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
 )
 
+type GetAllocatorFunc = func(s *allocator.RangeSet, poolName string, store storePkg.Store) allocator.IPAllocator
+
 // New create and initialize new instance of grpc Handlers
-func New() *Handlers {
-	return &Handlers{}
+func New(poolManager poolPkg.Manager, store storePkg.Store, getAllocFunc GetAllocatorFunc) *Handlers {
+	return &Handlers{
+		poolManager:  poolManager,
+		store:        store,
+		getAllocFunc: getAllocFunc,
+	}
 }
 
 // Handlers contains implementation of the GRPC endpoints handlers for ipam-daemon
 type Handlers struct {
+	poolManager  poolPkg.Manager
+	store        storePkg.Store
+	getAllocFunc GetAllocatorFunc
 	daemonv1.UnimplementedIPAMBackendServiceServer
 }
