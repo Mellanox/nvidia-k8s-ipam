@@ -101,11 +101,11 @@ func updateNode(node *corev1.Node) *corev1.Node {
 
 func getRangeFromNode(nodeName string) map[string]*pool.IPPool {
 	node := getNode(nodeName)
-	mgr, err := pool.NewManagerImpl(node)
+	poolCfg, err := pool.NewConfigReader(node)
 	if err != nil {
 		return nil
 	}
-	return mgr.GetPools()
+	return poolCfg.GetPools()
 }
 
 // WaitAndCheckForStability wait for condition and then check it is stable for 1 second
