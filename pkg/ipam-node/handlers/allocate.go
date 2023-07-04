@@ -11,16 +11,18 @@
  limitations under the License.
 */
 
-package main
+package handlers
 
 import (
-	"os"
+	"context"
 
-	"k8s.io/component-base/cli"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
-	"github.com/Mellanox/nvidia-k8s-ipam/cmd/ipam-node/app"
+	daemonv1 "github.com/Mellanox/nvidia-k8s-ipam/api/grpc/nvidia/ipam/node/v1"
 )
 
-func main() {
-	os.Exit(cli.Run(app.NewControllerCommand()))
+// Allocate is the handler for Allocate GRPC endpoint
+func (s *Handlers) Allocate(context.Context, *daemonv1.AllocateRequest) (*daemonv1.AllocateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Allocate not implemented")
 }

@@ -11,16 +11,16 @@
  limitations under the License.
 */
 
-package main
+package middleware_test
 
 import (
-	"os"
+	"testing"
 
-	"k8s.io/component-base/cli"
-
-	"github.com/Mellanox/nvidia-k8s-ipam/cmd/ipam-node/app"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-func main() {
-	os.Exit(cli.Run(app.NewControllerCommand()))
+func TestMiddleware(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Middleware Suite")
 }
