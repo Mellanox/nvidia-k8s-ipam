@@ -23,14 +23,14 @@ import (
 )
 
 var _ = Describe("pool tests", func() {
-	Context("NewManagerImpl()", func() {
+	Context("NewConfigReader()", func() {
 		It("Creates a Manager successfully if node has ip-pool annotation", func() {
 			n := v1.Node{}
 			emptyAnnot := map[string]string{
 				pool.IPBlocksAnnotation: "{}",
 			}
 			n.SetAnnotations(emptyAnnot)
-			m, err := pool.NewManagerImpl(&n)
+			m, err := pool.NewConfigReader(&n)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(m.GetPools()).To(HaveLen(0))
 
@@ -40,14 +40,14 @@ var _ = Describe("pool tests", func() {
 				"endIP": "192.168.0.254", "gateway": "192.168.0.1"}}`,
 			}
 			n.SetAnnotations(annot)
-			m, err = pool.NewManagerImpl(&n)
+			m, err = pool.NewConfigReader(&n)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(m.GetPools()).To(HaveLen(1))
 		})
 
 		It("Fails to create Manager if node is missing ip-pool annotation", func() {
 			n := v1.Node{}
-			_, err := pool.NewManagerImpl(&n)
+			_, err := pool.NewConfigReader(&n)
 			Expect(err).To(HaveOccurred())
 		})
 
@@ -57,13 +57,13 @@ var _ = Describe("pool tests", func() {
 				pool.IPBlocksAnnotation: "",
 			}
 			n.SetAnnotations(emptyAnnot)
-			_, err := pool.NewManagerImpl(&n)
+			_, err := pool.NewConfigReader(&n)
 			Expect(err).To(HaveOccurred())
 		})
 	})
 
 	Context("GetPoolByName()", func() {
-		var m pool.Manager
+		var m pool.ConfigReader
 
 		BeforeEach(func() {
 			var err error
@@ -74,7 +74,7 @@ var _ = Describe("pool tests", func() {
 				"endIP": "192.168.0.254", "gateway": "192.168.0.1"}}`,
 			}
 			n.SetAnnotations(annot)
-			m, err = pool.NewManagerImpl(&n)
+			m, err = pool.NewConfigReader(&n)
 			Expect(err).ToNot(HaveOccurred())
 		})
 
