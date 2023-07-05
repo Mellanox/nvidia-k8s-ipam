@@ -33,6 +33,13 @@ type IPPool struct {
 	Gateway string `json:"gateway"`
 }
 
+// String return string representation of the IPPool config
+func (p *IPPool) String() string {
+	//nolint:errchkjson
+	data, _ := json.Marshal(p)
+	return string(data)
+}
+
 // ConfigReader is an interface to which provides access to the pool configuration
 type ConfigReader interface {
 	// GetPoolByName returns IPPool for the provided pool name or nil if pool doesnt exist

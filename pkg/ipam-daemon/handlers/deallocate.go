@@ -16,13 +16,33 @@ package handlers
 import (
 	"context"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"k8s.io/klog/v2"
 
 	daemonv1 "github.com/Mellanox/nvidia-k8s-ipam/api/grpc/nvidia/ipam/daemon/v1"
 )
 
 // Deallocate is the handler for Deallocate GRPC endpoint
-func (s *Handlers) Deallocate(context.Context, *daemonv1.DeallocateRequest) (*daemonv1.DeallocateResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Deallocate not implemented")
+func (h *Handlers) Deallocate(
+	ctx context.Context, req *daemonv1.DeallocateRequest) (*daemonv1.DeallocateResponse, error) {
+	reqLog := addFieldsToLogger(klog.FromContext(ctx), req)
+	ctx = klog.NewContext(ctx, reqLog)
+	if err := validateReq(req); err != nil {
+		return nil, err
+	}
+	params := req.Parameters
+	store, err := h.openStore(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkReqISCanceled(ctx); err != nil {
+		return nil, h.closeStore(ctx, store, err)
+	}
+	for _, p := range params.Pools {
+		store.ReleaseReservationByID(p, params.CniContainerid, params.CniIfname)
+	}
+	if err := h.closeStore(ctx, store, nil); err != nil {
+		return nil, err
+	}
+	reqLog.Info("reservation released")
+	return &daemonv1.DeallocateResponse{}, nil
 }

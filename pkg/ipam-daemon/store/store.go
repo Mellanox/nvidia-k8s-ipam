@@ -63,8 +63,10 @@ type Store interface {
 	// GetReservationByID returns existing reservation for id and interface name,
 	// return nil if allocation not found
 	GetReservationByID(pool string, id string, ifName string) *types.Reservation
-	// Close writes data to the disk and release the lock
-	Close() error
+	// Commit writes data to the disk and release the lock
+	Commit() error
+	// Cancel simply release the lock
+	Cancel()
 }
 
 // NewManager create and initialize new store manager
@@ -105,12 +107,21 @@ type store struct {
 	storeFile  string
 	data       *types.Root
 	isModified bool
+	isCanceled bool
 }
 
-// Close is the Store interface implementation for store
-func (s *store) Close() error {
+// Commit is the Store interface implementation for store
+func (s *store) Commit() error {
+	if s.isCanceled {
+		return fmt.Errorf("can't commit to canceled store")
+	}
 	defer s.lock.Unlock()
 	return s.save()
+}
+
+func (s *store) Cancel() {
+	s.isCanceled = true
+	s.lock.Unlock()
 }
 
 // Reserve is the Store interface implementation for store
