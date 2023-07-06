@@ -92,16 +92,16 @@ cov-report: gcov2lcov unit-test  ## Build test coverage report in lcov format
 build-controller: ## build IPAM controller
 	$(GO_BUILD_OPTS) go build -ldflags $(GO_LDFLAGS) -o $(BUILD_DIR)/ipam-controller ./cmd/ipam-controller/main.go
 
-.PHONY: build-node
-build-node: ## build IPAM node
-	$(GO_BUILD_OPTS) go build -ldflags $(GO_LDFLAGS) -o $(BUILD_DIR)/ipam-node ./cmd/ipam-node/main.go
+.PHONY: build-daemon
+build-daemon: ## build IPAM daemon
+	$(GO_BUILD_OPTS) go build -ldflags $(GO_LDFLAGS) -o $(BUILD_DIR)/ipam-daemon ./cmd/ipam-daemon/main.go
 
 .PHONY: build-cni
 build-cni: ## build IPAM cni
 	$(GO_BUILD_OPTS) go build -ldflags $(GO_LDFLAGS) -o $(BUILD_DIR)/nv-ipam ./cmd/nv-ipam/main.go
 
 .PHONY: build
-build: build-controller build-node build-cni ## Build project binaries
+build: build-controller build-daemon build-cni ## Build project binaries
 	
 
 .PHONY: docker-build
