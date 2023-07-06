@@ -8,8 +8,11 @@ rules:
       - ""
     resources:
       - nodes
+      - pods
     verbs:
       - get
+      - list
+      - watch
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -52,7 +55,6 @@ spec:
         app: nv-ipam-node
         name: nv-ipam-node
     spec:
-      hostNetwork: true
       tolerations:
         - operator: Exists
           effect: NoSchedule
@@ -70,43 +72,44 @@ spec:
                   fieldPath: spec.nodeName
           command: [ "/ipam-node" ]
           args:
-            - --nv-ipam-log-file=/var/log/nv-ipam-cni.log
-            - --nv-ipam-log-level=info
+            - --node-name=$(NODE_NAME)
+            - --v=1 # log level for ipam-node
+            - --logging-format=json
+            - --bind-address=unix:///var/lib/cni/nv-ipam/daemon.sock
+            - --store-file=/var/lib/cni/nv-ipam/store
+            - --cni-daemon-socket=unix:///var/lib/cni/nv-ipam/daemon.sock
+            - --cni-daemon-call-timeout=5 # 5 seconds
+            - --cni-bin-dir=/opt/cni/bin
+            - --cni-conf-dir=/etc/cni/net.d/nv-ipam.d
+            - --cni-log-file=/var/log/nv-ipam-cni.log
+            - --cni-log-level=info # log level for shim CNI
           resources:
             requests:
               cpu: "100m"
               memory: "50Mi"
             limits:
-              cpu: "100m"
-              memory: "50Mi"
-          securityContext:
-            privileged: true
+              cpu: "300m"
+              memory: "300Mi"
           volumeMounts:
             - name: cnibin
-              mountPath: /host/opt/cni/bin
-            - name: cni
-              mountPath: /host/etc/cni/net.d
-            - name: hostlocalcnibin
-              mountPath: /host/var/lib/cni/nv-ipam/bin
-            - name: hostlocalcnistate
-              mountPath: /host/var/lib/cni/nv-ipam/state/host-local
+              mountPath: /opt/cni/bin
+            - name: cniconf
+              mountPath: /etc/cni/net.d/nv-ipam.d
+            - name: daemonstate
+              mountPath: /var/lib/cni/nv-ipam/
       terminationGracePeriodSeconds: 10
       volumes:
         - name: cnibin
           hostPath:
             path: /opt/cni/bin
             type: DirectoryOrCreate
-        - name: cni
+        - name: cniconf
           hostPath:
-            path: /etc/cni/net.d
+            path: /etc/cni/net.d/nv-ipam.d
             type: DirectoryOrCreate
-        - name: hostlocalcnibin
+        - name: daemonstate
           hostPath:
-            path: /var/lib/cni/nv-ipam/bin
-            type: DirectoryOrCreate
-        - name: hostlocalcnistate
-          hostPath:
-            path: /var/lib/cni/nv-ipam/state/host-local
+            path: /var/lib/cni/nv-ipam/
             type: DirectoryOrCreate
 ---
 kind: ClusterRole
