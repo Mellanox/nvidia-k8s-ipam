@@ -17,9 +17,12 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/go-logr/logr"
@@ -217,6 +220,10 @@ func initGRPCServer(opts *options.Options,
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := cleanUNIXSocketIfRequired(opts); err != nil {
+		log.Error(err, "failed to clean socket path")
+		return nil, nil, err
+	}
 	listener, err := net.Listen(network, address)
 	if err != nil {
 		log.Error(err, "failed to start listener for GRPC server")
@@ -229,6 +236,31 @@ func initGRPCServer(opts *options.Options,
 	nodev1.RegisterIPAMServiceServer(grpcServer,
 		handlers.New(poolConfReader, store.New(opts.StoreFile), allocator.NewIPAllocator))
 	return grpcServer, listener, nil
+}
+
+func cleanUNIXSocketIfRequired(opts *options.Options) error {
+	socketPrefix := "unix://"
+	if !strings.HasPrefix(opts.BindAddress, socketPrefix) {
+		return nil
+	}
+	socketPath, _ := strings.CutPrefix(opts.BindAddress, socketPrefix)
+	info, err := os.Stat(socketPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	if info.Mode().Type() != os.ModeSocket {
+		return fmt.Errorf("socket bind path exist, but not a socket")
+	}
+	if err := os.Remove(socketPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("failed to remove socket: %v", err)
+	}
+	return nil
 }
 
 func deployShimCNI(log logr.Logger, opts *options.Options) error {
