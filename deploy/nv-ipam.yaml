@@ -74,7 +74,7 @@ spec:
           args:
             - --node-name=$(NODE_NAME)
             - --v=1 # log level for ipam-daemon
-            - --logging-format=json
+            - --feature-gates=ContextualLogging=true
             - --bind-address=unix:///var/lib/cni/nv-ipam/daemon-socket
             - --store-file=/var/lib/cni/nv-ipam/store
             - --cni-daemon-socket=unix:///var/lib/cni/nv-ipam/daemon-socket
@@ -238,6 +238,7 @@ spec:
           imagePullPolicy: IfNotPresent
           command: [ "/ipam-controller" ]
           args:
+            - --feature-gates=ContextualLogging=true
             - --config-name=nvidia-k8s-ipam-config
             - --config-namespace=$(POD_NAMESPACE)
             - --leader-elect=true

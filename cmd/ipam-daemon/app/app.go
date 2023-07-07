@@ -76,7 +76,7 @@ func NewControllerCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to read config for k8s client: %v", err)
 			}
-			return RunDaemon(logr.NewContext(ctx, klog.NewKlogr()), conf, opts)
+			return RunDaemon(klog.NewContext(ctx, klog.NewKlogr()), conf, opts)
 		},
 		Args: func(cmd *cobra.Command, args []string) error {
 			for _, arg := range args {
@@ -105,7 +105,7 @@ func NewControllerCommand() *cobra.Command {
 //
 //nolint:funlen
 func RunDaemon(ctx context.Context, config *rest.Config, opts *options.Options) error {
-	logger := logr.FromContextOrDiscard(ctx)
+	logger := klog.FromContext(ctx)
 	ctrl.SetLogger(logger)
 
 	logger.Info("start IPAM daemon",

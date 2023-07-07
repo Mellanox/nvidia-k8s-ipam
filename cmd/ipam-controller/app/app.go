@@ -19,7 +19,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -67,7 +66,7 @@ func NewControllerCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to read config for k8s client: %v", err)
 			}
-			return RunController(logr.NewContext(ctx, klog.NewKlogr()), conf, opts)
+			return RunController(klog.NewContext(ctx, klog.NewKlogr()), conf, opts)
 		},
 		Args: func(cmd *cobra.Command, args []string) error {
 			for _, arg := range args {
@@ -94,7 +93,7 @@ func NewControllerCommand() *cobra.Command {
 
 // RunController start IPAM controller with provided options
 func RunController(ctx context.Context, config *rest.Config, opts *options.Options) error {
-	logger := logr.FromContextOrDiscard(ctx)
+	logger := klog.FromContext(ctx)
 	ctrl.SetLogger(logger)
 
 	logger.Info("start IPAM controller",
