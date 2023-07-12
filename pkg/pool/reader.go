@@ -33,19 +33,26 @@ type IPPool struct {
 	Gateway string `json:"gateway"`
 }
 
-// Manager is an interface to manage IPPools
-type Manager interface {
+// String return string representation of the IPPool config
+func (p *IPPool) String() string {
+	//nolint:errchkjson
+	data, _ := json.Marshal(p)
+	return string(data)
+}
+
+// ConfigReader is an interface to which provides access to the pool configuration
+type ConfigReader interface {
 	// GetPoolByName returns IPPool for the provided pool name or nil if pool doesnt exist
 	GetPoolByName(name string) *IPPool
 	// GetPools returns map with information about all pools
 	GetPools() map[string]*IPPool
 }
 
-type ManagerImpl struct {
+type configReader struct {
 	poolByName map[string]*IPPool
 }
 
-func NewManagerImpl(node *v1.Node) (*ManagerImpl, error) {
+func NewConfigReader(node *v1.Node) (ConfigReader, error) {
 	if node == nil {
 		return nil, fmt.Errorf("nil node provided")
 	}
@@ -65,17 +72,17 @@ func NewManagerImpl(node *v1.Node) (*ManagerImpl, error) {
 		pool.Name = poolName
 	}
 
-	return &ManagerImpl{
+	return &configReader{
 		poolByName: poolByName,
 	}, nil
 }
 
-// GetPoolByName implements Manager interface
-func (pm *ManagerImpl) GetPoolByName(name string) *IPPool {
-	return pm.poolByName[name]
+// GetPoolByName implements ConfigReader interface
+func (r *configReader) GetPoolByName(name string) *IPPool {
+	return r.poolByName[name]
 }
 
-// GetPools implements Manager interface
-func (pm *ManagerImpl) GetPools() map[string]*IPPool {
-	return pm.poolByName
+// GetPools implements ConfigReader interface
+func (r *configReader) GetPools() map[string]*IPPool {
+	return r.poolByName
 }

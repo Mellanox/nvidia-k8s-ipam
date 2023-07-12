@@ -1,0 +1,75 @@
+// Copyright 2023, NVIDIA CORPORATION & AFFILIATES
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//     http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package nvidia.ipam.daemon.v1;
+
+// gRPC service definition for NVIDIA IPAM daemon
+service IPAMBackendService {
+  // Allocate is called as a part of CMD_ADD flow
+  rpc Allocate(AllocateRequest) returns (AllocateResponse) {}
+  // IsAllocated is called as a part of CMD_CHECk flow
+  rpc IsAllocated(IsAllocatedRequest) returns (IsAllocatedResponse) {}
+  // Deallocate is called as a part of CMD_DEL flow
+  rpc Deallocate(DeallocateRequest) returns (DeallocateResponse) {}
+}
+
+// AllocateRequest contains parameters for Allocate rpc call
+message AllocateRequest {
+  IPAMParameters parameters = 1;
+}
+
+// IPAMParameters common message which contains information used in all calls
+message IPAMParameters {
+  repeated string pools = 1;
+  string cni_containerid = 2;
+  string cni_ifname = 3;
+  IPAMMetadata metadata = 4;
+}
+
+// IPAMMetadata contains metadata for IPAM calls
+message IPAMMetadata {
+  string k8s_pod_name = 1;
+  string k8s_pod_namespace = 2;
+  // optional
+  // k8s_pod_uid exist in containerd >= 1.6 cr-io >= 0.3
+  string k8s_pod_uid = 3;
+  // optional
+  string device_id = 4;
+}
+
+// IsAllocatedRequest contains parameters for IsAllocated rpc call
+message IsAllocatedRequest {
+  IPAMParameters parameters = 1;
+}
+
+// DeallocateRequest contains parameters for Deallocate rpc call
+message DeallocateRequest {
+  IPAMParameters parameters = 1;
+}
+
+// AllocateResponse contains reply for Allocate rpc call
+message AllocateResponse {
+  repeated AllocationInfo allocations = 1;
+}
+
+message AllocationInfo {
+  string pool = 1;
+  string ip = 2;
+  string gateway = 3;
+}
+
+// IsAllocatedReply contains reply for IsAllocated rpc call
+message IsAllocatedResponse {}
+
+// DeallocateReply contains reply for Deallocate rpc call
+message DeallocateResponse {}

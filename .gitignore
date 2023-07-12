@@ -6,6 +6,7 @@
 *.dylib
 bin
 build/
+_tmp
 testbin/*
 .gocache
 
