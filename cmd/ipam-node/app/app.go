@@ -19,9 +19,11 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"path/filepath"
 	"sync"
 
 	"github.com/go-logr/logr"
+	"github.com/google/renameio/v2"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	corev1 "k8s.io/api/core/v1"
@@ -44,6 +46,8 @@ import (
 
 	nodev1 "github.com/Mellanox/nvidia-k8s-ipam/api/grpc/nvidia/ipam/node/v1"
 	"github.com/Mellanox/nvidia-k8s-ipam/cmd/ipam-node/app/options"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/cmdutils"
+	cniTypes "github.com/Mellanox/nvidia-k8s-ipam/pkg/cni/types"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/allocator"
 	nodectrl "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/controllers/node"
@@ -106,6 +110,10 @@ func RunNodeDaemon(ctx context.Context, config *rest.Config, opts *options.Optio
 
 	logger.Info("start IPAM node daemon",
 		"version", version.GetVersionString(), "node", opts.NodeName)
+
+	if err := deployShimCNI(logger, opts); err != nil {
+		return err
+	}
 
 	scheme := runtime.NewScheme()
 
@@ -221,4 +229,37 @@ func initGRPCServer(opts *options.Options,
 	nodev1.RegisterIPAMServiceServer(grpcServer,
 		handlers.New(poolConfReader, store.New(opts.StoreFile), allocator.NewIPAllocator))
 	return grpcServer, listener, nil
+}
+
+func deployShimCNI(log logr.Logger, opts *options.Options) error {
+	// copy nv-ipam binary
+	if !opts.CNISkipBinFileCopy {
+		if err := cmdutils.CopyFileAtomic(opts.CNIBinFile, opts.CNIBinDir,
+			"_nv-ipam", "nv-ipam"); err != nil {
+			log.Error(err, "failed at nv-ipam copy")
+			return err
+		}
+	}
+	if !opts.CNISkipConfigCreation {
+		return createNVIPAMConfig(log, opts)
+	}
+	return nil
+}
+
+func createNVIPAMConfig(log logr.Logger, opts *options.Options) error {
+	cfg := fmt.Sprintf(`{
+  "daemonSocket":    "%s",
+  "daemonCallTimeoutSeconds":    %d,
+  "logFile":   "%s",
+  "logLevel": "%s"
+}
+`, opts.CNIDaemonSocket, opts.CNIDaemonCallTimeoutSeconds, opts.CNILogFile, opts.CNILogLevel)
+
+	err := renameio.WriteFile(filepath.Join(opts.CNIConfDir, cniTypes.ConfFileName), []byte(cfg), 0664)
+	if err != nil {
+		log.Error(err, "failed to write configuration for shim CNI")
+		return err
+	}
+	log.Info("config for shim CNI written", "config", cfg)
+	return nil
 }
