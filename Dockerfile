@@ -14,9 +14,6 @@ COPY . /workspace
 
 # Build with make to apply all build logic defined in Makefile
 RUN make build
-# Build host-local cni
-RUN git clone https://github.com/containernetworking/plugins.git ; cd plugins ; git checkout v1.2.0 -b v1.2.0
-RUN cd plugins ; go build -o plugins/bin/host-local ./plugins/ipam/host-local
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
@@ -25,4 +22,4 @@ WORKDIR /
 COPY --from=builder /workspace/build/ipam-controller .
 COPY --from=builder /workspace/build/ipam-node .
 COPY --from=builder /workspace/build/nv-ipam .
-COPY --from=builder /workspace/plugins/plugins/bin/host-local .
+
