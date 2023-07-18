@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/google/renameio/v2"
@@ -53,10 +54,11 @@ import (
 	cniTypes "github.com/Mellanox/nvidia-k8s-ipam/pkg/cni/types"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/allocator"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/cleaner"
 	nodectrl "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/controllers/node"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/grpc/middleware"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/handlers"
-	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/store"
+	storePkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/store"
 	poolPkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/version"
 )
@@ -160,24 +162,26 @@ func RunNodeDaemon(ctx context.Context, config *rest.Config, opts *options.Optio
 		return err
 	}
 
-	grpcServer, listener, err := initGRPCServer(opts, logger, poolManager)
+	store := storePkg.New(opts.StoreFile)
+
+	grpcServer, listener, err := initGRPCServer(opts, logger, poolManager, store)
 	if err != nil {
 		return err
 	}
 
 	wg := sync.WaitGroup{}
-	wg.Add(3)
-
 	errCh := make(chan error, 1)
 
 	innerCtx, innerCFunc := context.WithCancel(ctx)
 	defer innerCFunc()
 
+	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		<-innerCtx.Done()
 		grpcServer.GracefulStop()
 	}()
+	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		logger.Info("start grpc server")
@@ -190,6 +194,7 @@ func RunNodeDaemon(ctx context.Context, config *rest.Config, opts *options.Optio
 		}
 		logger.Info("grpc server stopped")
 	}()
+	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		logger.Info("start manager")
@@ -201,6 +206,21 @@ func RunNodeDaemon(ctx context.Context, config *rest.Config, opts *options.Optio
 			}
 		}
 		logger.Info("manager stopped")
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		logger.Info("start stale reservations cleaner")
+		if !mgr.GetCache().WaitForCacheSync(innerCtx) {
+			select {
+			case errCh <- fmt.Errorf("failed to sync informer cache"):
+			default:
+			}
+			return
+		}
+		c := cleaner.New(mgr.GetClient(), store, time.Minute, 3)
+		c.Start(innerCtx)
+		logger.Info("cleaner stopped")
 	}()
 
 	select {
@@ -215,7 +235,7 @@ func RunNodeDaemon(ctx context.Context, config *rest.Config, opts *options.Optio
 }
 
 func initGRPCServer(opts *options.Options,
-	log logr.Logger, poolConfReader poolPkg.ConfigReader) (*grpc.Server, net.Listener, error) {
+	log logr.Logger, poolConfReader poolPkg.ConfigReader, store storePkg.Store) (*grpc.Server, net.Listener, error) {
 	network, address, err := options.ParseBindAddress(opts.BindAddress)
 	if err != nil {
 		return nil, nil, err
@@ -234,7 +254,7 @@ func initGRPCServer(opts *options.Options,
 		middleware.LogCallMiddleware))
 
 	nodev1.RegisterIPAMServiceServer(grpcServer,
-		handlers.New(poolConfReader, store.New(opts.StoreFile), allocator.NewIPAllocator))
+		handlers.New(poolConfReader, store, allocator.NewIPAllocator))
 	return grpcServer, listener, nil
 }
 
