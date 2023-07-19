@@ -168,6 +168,8 @@ var _ = Describe("App", func() {
 				Expect(app.RunController(logr.NewContext(ctrlCtx, klog.NewKlogr()), cfg, &options.Options{
 					ConfigMapName:      TestConfigMapName,
 					ConfigMapNamespace: TestNamespace,
+					MetricsAddr:        "0", // disable
+					ProbeAddr:          "0", // disable
 				})).NotTo(HaveOccurred())
 				close(controllerStopped)
 			}()
