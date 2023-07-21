@@ -24,7 +24,7 @@ This repository is in its first steps of development, APIs may change in a non b
 NVIDIA IPAM plugin consists of 3 main components:
 
 1. controller ([ipam-controller](#ipam-controller))
-2. node agent ([ipam-node](#ipam-node))
+2. node daemon ([ipam-node](#ipam-node))
 3. IPAM CNI plugin ([nv-ipam](#nv-ipam))
 
 ### ipam-controller
@@ -35,19 +35,20 @@ annotation a cluster unique range of IPs of the defined IP Pools.
 
 ### ipam-node
 
-A node agent that performs initial setup and installation of nv-ipam CNI plugin.
+The daemon is responsible for:
+- perform initial setup and installation of nv-ipam CNI plugin
+- perform allocations of the IPs and persist them on the disk
+- run periodic jobs, such as cleanup of the stale IP address allocations
+
+A node daemon provides GRPC service, which nv-ipam CNI plugin uses to request IP address allocation/deallocation.
+IPs are allocated from the provided IP Block assigned by ipam-controller for the node.
+To determine the cluster unique IP Block for the defined IP Pool, ipam-node watches K8s API
+for the Node object and extracts IP Block information from node annotation.
 
 ### nv-ipam
 
-An IPAM CNI plugin that allocates IPs for a given interface out of the defined IP Pool as provided
-via CNI configuration.
-
-IPs are allocated out of the provided IP Block assigned by ipam-controller for the node.
-To determine the cluster unique IP Block for the defined IP Pool, nv-ipam CNI queries K8s API
-for the Node object and extracts IP Block information from node annotation.
-
-nv-ipam plugin currently leverages [host-local](https://www.cni.dev/plugins/current/ipam/host-local/)
-IPAM to allocate IPs from the given range.
+An IPAM CNI plugin that handles CNI requests according to the CNI spec.
+To allocate/deallocate IP address nv-ipam calls GRPC API of ipam-node daemon.
 
 ### IP allocation flow
 
@@ -189,21 +190,76 @@ data:
 
 ### ipam-node configuration
 
-ipam-node accepts configuration via command line flags
+ipam-node accepts configuration via command line flags.
+Options that begins with the `cni-` prefix are used to create the config file for nv-ipam CNI.
+All other options are for the ipam-node daemon itself.
 
 ```text
-      --cni-bin-dir string                    CNI binary directory (default "/host/opt/cni/bin")
-      --cni-conf-dir string                   CNI config directory (default "/host/etc/cni/net.d")
-  -h, --help                                  show help message and quit
-      --host-local-bin-file string            host-local binary file path (default "/host-local")
-      --nv-ipam-bin-file string               nv-ipam binary file path (default "/nv-ipam")
-      --nv-ipam-cni-data-dir string           nv-ipam CNI data directory (default "/host/var/lib/cni/nv-ipam")
-      --nv-ipam-cni-data-dir-host string      nv-ipam CNI data directory on host (default "/var/lib/cni/nv-ipam")
-      --nv-ipam-kubeconfig-file-host string   kubeconfig for nv-ipam (default "/etc/cni/net.d/nv-ipam.d/nv-ipam.kubeconfig")
-      --nv-ipam-log-file string               nv-ipam log file (default "/var/log/nv-ipam-cni.log")
-      --nv-ipam-log-level string              nv-ipam log level (default "info")
-      --skip-host-local-binary-copy           skip host-loca binary file copy
-      --skip-nv-ipam-binary-copy              skip nv-ipam binary file copy
+Logging flags:
+
+      --log-flush-frequency duration                                                                                                                                                                 
+                Maximum number of seconds between log flushes (default 5s)
+      --log-json-info-buffer-size quantity                                                                                                                                                           
+                [Alpha] In JSON format with split output streams, the info messages can be buffered for a while to increase performance. The default value of zero bytes disables buffering. The size
+                can be specified as number of bytes (512), multiples of 1000 (1K), multiples of 1024 (2Ki), or powers of those (3M, 4G, 5Mi, 6Gi). Enable the LoggingAlphaOptions feature gate to use this.
+      --log-json-split-stream                                                                                                                                                                        
+                [Alpha] In JSON format, write error messages to stderr and info messages to stdout. The default is to write a single stream to stdout. Enable the LoggingAlphaOptions feature gate to
+                use this.
+      --logging-format string                                                                                                                                                                        
+                Sets the log format. Permitted formats: "json" (gated by LoggingBetaOptions), "text". (default "text")
+  -v, --v Level                                                                                                                                                                                      
+                number for the log level verbosity
+      --vmodule pattern=N,...                                                                                                                                                                        
+                comma-separated list of pattern=N settings for file-filtered logging (only works for text log format)
+
+Common flags:
+
+      --feature-gates mapStringBool                                                                                                                                                                  
+                A set of key=value pairs that describe feature gates for alpha/experimental features. Options are:
+                AllAlpha=true|false (ALPHA - default=false)
+                AllBeta=true|false (BETA - default=false)
+                ContextualLogging=true|false (ALPHA - default=false)
+                LoggingAlphaOptions=true|false (ALPHA - default=false)
+                LoggingBetaOptions=true|false (BETA - default=true)
+      --version                                                                                                                                                                                      
+                print binary version and exit
+
+Node daemon flags:
+
+      --bind-address string                                                                                                                                                                          
+                GPRC server bind address. e.g.: tcp://127.0.0.1:9092, unix:///var/lib/foo (default "unix:///var/lib/cni/nv-ipam/daemon.sock")
+      --health-probe-bind-address string                                                                                                                                                             
+                The address the probe endpoint binds to. (default ":8081")
+      --kubeconfig string                                                                                                                                                                            
+                Paths to a kubeconfig. Only required if out-of-cluster.
+      --metrics-bind-address string                                                                                                                                                                  
+                The address the metric endpoint binds to. (default ":8080")
+      --node-name string                                                                                                                                                                             
+                The name of the Node on which the daemon runs
+      --store-file string                                                                                                                                                                            
+                Path of the file which used to store allocations (default "/var/lib/cni/nv-ipam/store")
+
+Shim CNI Configuration flags:
+
+      --cni-bin-dir string                                                                                                                                                                           
+                CNI binary directory (default "/opt/cni/bin")
+      --cni-conf-dir string                                                                                                                                                                          
+                shim CNI config: path with config file (default "/etc/cni/net.d/nv-ipam.d")
+      --cni-daemon-call-timeout int                                                                                                                                                                  
+                shim CNI config: timeout for IPAM daemon calls (default 5)
+      --cni-daemon-socket string                                                                                                                                                                     
+                shim CNI config: IPAM daemon socket path (default "unix:///var/lib/cni/nv-ipam/daemon.sock")
+      --cni-log-file string                                                                                                                                                                          
+                shim CNI config: path to log file for shim CNI (default "/var/log/nv-ipam-cni.log")
+      --cni-log-level string                                                                                                                                                                         
+                shim CNI config: log level for shim CNI (default "info")
+      --cni-nv-ipam-bin-file string                                                                                                                                                                  
+                nv-ipam binary file path (default "/nv-ipam")
+      --cni-skip-nv-ipam-binary-copy                                                                                                                                                                 
+                skip nv-ipam binary file copy
+      --cni-skip-nv-ipam-config-creation                                                                                                                                                             
+                skip config file creation for nv-ipam CNI
+
 ```
 
 ### nv-ipam CNI configuration
@@ -214,8 +270,8 @@ nv-ipam accepts the following CNI configuration:
 {
     "type": "nv-ipam",
     "poolName": "my-pool",
-    "kubeconfig": "/etc/cni/net.d/nv-ipam.d/nv-ipam.kubeconfig",
-    "dataDir": "/var/lib/cni/nv-ipam",
+    "daemonSocket": "unix:///var/lib/cni/nv-ipam/daemon.sock",
+    "daemonCallTimeoutSeconds": 5,
     "confDir": "/etc/cni/net.d/nv-ipam.d",
     "logFile": "/var/log/nv-ipam-cni.log",
     "logLevel": "info"
@@ -223,9 +279,12 @@ nv-ipam accepts the following CNI configuration:
 ```
 
 * `type` (string, required): CNI plugin name, MUST be `"nv-ipam"`
-* `poolName` (string, optional): name of the IP Pool to be used for IP allocation. (default: network name as provided in CNI call)
-* `kubeconfig` (string, optional): path to kubeconfig file. (default: `"/etc/cni/net.d/nv-ipam.d/nv-ipam.kubeconfig"`)
-* `dataDir` (string, optional): path to data dir. (default: `/var/lib/cni/nv-ipam`)
+* `poolName` (string, optional): name of the IP Pool to be used for IP allocation.
+It is possible to allocate two IPs for the interface from different pools by specifying pool names separated by coma,
+e.g. `"my-ipv4-pool,my-ipv6-pool"`. The primary intent to support multiple pools is a dual-stack use-case when an 
+interface should have two IP addresses: one IPv4 and one IPv6. (default: network name as provided in CNI call)
+* `daemonSocket` (string, optional): address of GRPC server socket served by IPAM daemon
+* `daemonCallTimeoutSeconds` (integer, optional): timeout for GRPC calls to IPAM daemon
 * `confDir` (string, optional): path to configuration dir. (default: `"/etc/cni/net.d/nv-ipam.d"`)
 * `logFile` (string, optional): log file path. (default: `"/var/log/nv-ipam-cni.log"`)
 * `logLevel` (string, optional): logging level. one of: `["verbose", "debug", "info", "warning", "error", "panic"]`.  (default: `"info"`)
@@ -319,11 +378,8 @@ cat /var/log/nv-ipam-cni.log
 
 ## Limitations
 
-* Deleting an IP Pool from config map while there are pods scheduled on nodes with IPs from deleted Pool, deleting these pods will fail (CNI CMD DEL fails)
 * Before removing a node from cluster, drain all workloads to ensure proper cleanup of IPs on node.
 * IP Block allocated to a node with Gateway IP in its range will have one less IP than what defined in perNodeBlockSize, deployers should take this into account.
-* IPv6 not supported
-* Allocating Multiple IPs per interface is not supported
 * Defining multiple IP Pools while supported, was not thoroughly testing
 
 ## Contributing
