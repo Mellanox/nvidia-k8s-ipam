@@ -5,6 +5,7 @@ go 1.20
 require (
 	github.com/containernetworking/cni v1.1.2
 	github.com/go-logr/logr v1.2.4
+	github.com/gofrs/flock v0.8.1
 	github.com/google/renameio/v2 v2.0.0
 	github.com/google/uuid v1.3.0
 	github.com/k8snetworkplumbingwg/cni-log v0.0.0-20230321145726-634c593dd11f

@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/gofrs/flock"
 	"github.com/google/renameio/v2"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
@@ -162,7 +163,31 @@ func RunNodeDaemon(ctx context.Context, config *rest.Config, opts *options.Optio
 		return err
 	}
 
+	storeLock := flock.New(opts.StoreFile)
+	locked, err := storeLock.TryLock()
+	if err != nil {
+		logger.Error(err, "failed to set store lock")
+		return err
+	}
+	if !locked {
+		err := fmt.Errorf("store lock is held by a different process")
+		logger.Error(err, "failed to lock store")
+		return err
+	}
+	defer func() {
+		err := storeLock.Unlock()
+		if err != nil {
+			logger.Error(err, "failed to release store lock")
+		}
+	}()
 	store := storePkg.New(opts.StoreFile)
+	// do initial store loading, to validate stored data
+	s, err := store.Open(ctx)
+	if err != nil {
+		logger.Error(err, "failed to validate store data")
+		return err
+	}
+	s.Cancel()
 
 	grpcServer, listener, err := initGRPCServer(opts, logger, poolManager, store)
 	if err != nil {
