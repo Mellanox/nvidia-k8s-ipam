@@ -143,6 +143,7 @@ PROTOC ?= $(LOCALBIN)/protoc/bin/protoc
 PROTOC_GEN_GO ?= $(LOCALBIN)/protoc-gen-go
 PROTOC_GEN_GO_GRPC ?= $(LOCALBIN)/protoc-gen-go-grpc
 BUF ?= $(LOCALBIN)/buf
+CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 
 ## Tool Versions
 GOLANGCILINT_VERSION ?= v1.52.2
@@ -152,7 +153,7 @@ PROTOC_VER ?= 23.4
 PROTOC_GEN_GO_VER ?= 1.31.0
 PROTOC_GEN_GO_GRPC_VER ?= 1.3.0
 BUF_VERSION ?= 1.23.1
-
+CONTROLLER_GEN_VERSION ?= v0.13.0
 
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
@@ -251,3 +252,15 @@ grpc-format: buf  ## Format GRPC files
 	@echo "format protobuf files";
 	cd $(PROTO_DIR) && \
 	$(BUF) format -w --exit-code
+.PHONY: controller-gen
+controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary
+$(CONTROLLER_GEN): | $(LOCALBIN)
+	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_GEN_VERSION)
+
+.PHONY: generate
+generate: controller-gen
+	$(CONTROLLER_GEN) object:headerFile="./boilerplate.go.txt" paths="./api/..."
+
+.PHONY: manifests
+manifests: controller-gen
+	$(CONTROLLER_GEN) crd paths="./api/..." output:dir="./deploy/crds"
