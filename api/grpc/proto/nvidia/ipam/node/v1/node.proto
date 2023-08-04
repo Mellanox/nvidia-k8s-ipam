@@ -1,0 +1,113 @@
+// Copyright 2023, NVIDIA CORPORATION & AFFILIATES
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//     http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package nvidia.ipam.node.v1;
+
+// gRPC service definition for NVIDIA IPAM node daemon
+service IPAMService {
+  // Allocate is called as a part of CMD_ADD flow.
+  // Returns response with allocated IPs if allocation succeeds or an error in case of failure.
+  // If multiple pools are provided in the request, then allocation succeeds if it succeeds for all pools.
+  // errors:
+  //   Canceled - request was canceled by the caller
+  //   Internal - internal failure of the service, this error can't be fixed by the caller
+  //   InvalidArgument - missing required argument or argument has wrong format, check message for details
+  //   NotFound - allocation is requested for unknown IP pool
+  //   AlreadyExists - container identified by IPAMParameters already has allocated IP in the pool
+  //   ResourceExhausted - no free IP addresses available in the IP pool
+  rpc Allocate(AllocateRequest) returns (AllocateResponse) {}
+  // IsAllocated is called as a part of CMD_CHECK flow
+  // Returns empty response if a valid allocation already exists or an error otherwise.
+  // If multiple pools are provided in the request, then check
+  // succeed only if it is succeed for all pools.
+  // errors:
+  //   Canceled - request was canceled by the caller
+  //   Internal - internal failure of the service, this error can't be fixed by the caller
+  //   InvalidArgument - missing required argument or argument has wrong format, check message for details
+  //   NotFound - allocation not found
+  rpc IsAllocated(IsAllocatedRequest) returns (IsAllocatedResponse) {}
+  // Deallocate is called as a part of CMD_DEL flow.
+  // Returns empty response if allocation for all pools released successfully or error otherwise.
+  // If multiple pools are provided in the request, then deallocation
+  // succeeds if it is succeeds for all pools else no deallocation is performed.
+  // errors:
+  //   Canceled - request was canceled by the caller
+  //   Internal - internal failure of the service, this error can't be fixed by the caller
+  //   InvalidArgument - missing required argument or argument has wrong format, check message for details
+  rpc Deallocate(DeallocateRequest) returns (DeallocateResponse) {}
+}
+
+// AllocateRequest contains parameters for Allocate rpc call
+message AllocateRequest {
+  // required, IPAMParameters contains parameters IPAM parameters related to the request
+  IPAMParameters parameters = 1;
+}
+
+// IPAMParameters common message which contains information used in all rpc calls
+message IPAMParameters {
+  // required, list of pools in which IP addresses should be allocated,
+  // must contain one or two elements (dual-stack, IPv4 + IPv6 use-case)
+  repeated string pools = 1;
+  // required, a unique plaintext identifier for a container, allocated by the runtime
+  string cni_containerid = 2;
+  // required, name of the interface inside the container
+  string cni_ifname = 3;
+  // required, additional metadata to identify IP allocation
+  IPAMMetadata metadata = 4;
+}
+
+// IPAMMetadata contains metadata for IPAM calls
+message IPAMMetadata {
+  // required, name of the k8s pod
+  string k8s_pod_name = 1;
+  // required, namespace of the k8s pod
+  string k8s_pod_namespace = 2;
+  // optional, UID of the k8s pod, k8s_pod_uid exist in containerd >= 1.6 cr-io >= 0.3
+  string k8s_pod_uid = 3;
+  // optional, PCI device ID related to the allocation
+  string device_id = 4;
+}
+
+// IsAllocatedRequest contains parameters for IsAllocated rpc call
+message IsAllocatedRequest {
+  // required, IPAMParameters contains parameters IPAM parameters related to the request
+  IPAMParameters parameters = 1;
+}
+
+// DeallocateRequest contains parameters for Deallocate rpc call
+message DeallocateRequest {
+  // required, IPAMParameters contains parameters IPAM parameters related to the request
+  IPAMParameters parameters = 1;
+}
+
+// AllocateResponse contains reply for Allocate rpc call
+message AllocateResponse {
+  // list of allocated IPs
+  repeated AllocationInfo allocations = 1;
+}
+
+// AllocationInfo contains information about the allocation
+message AllocationInfo {
+  // name of the pool in which this IP was allocated
+  string pool = 1;
+  // allocated IP together with prefix length, e.g. 192.168.10.33/24
+  string ip = 2;
+  // gateway for allocated IP
+  string gateway = 3;
+}
+
+// IsAllocatedReply contains reply for IsAllocated rpc call
+message IsAllocatedResponse {}
+
+// DeallocateReply contains reply for Deallocate rpc call
+message DeallocateResponse {}

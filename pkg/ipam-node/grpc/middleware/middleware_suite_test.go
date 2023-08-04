@@ -11,26 +11,16 @@
  limitations under the License.
 */
 
-package k8sclient
+package middleware_test
 
 import (
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
+	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-// FromKubeconfig returns a kubernetes client created from provided kubeconfig path
-func FromKubeconfig(kubeconfigPath string) (*kubernetes.Clientset, error) {
-	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-		&clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeconfigPath},
-		&clientcmd.ConfigOverrides{}).ClientConfig()
-	if err != nil {
-		return nil, err
-	}
-
-	k8sClient, err := kubernetes.NewForConfig(cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	return k8sClient, nil
+func TestMiddleware(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Middleware Suite")
 }

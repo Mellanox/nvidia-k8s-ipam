@@ -240,14 +240,14 @@ func (a *Allocator) ConfigureAndLoadAllocations(ctx context.Context, configs []A
 	for i := range nodes {
 		node := nodes[i]
 		nodeLog := log.WithValues("node", node.Name)
-		nodePoolMgr, err := pool.NewManagerImpl(&node)
+		poolCfg, err := pool.NewConfigReader(&node)
 		if err != nil {
 			nodeLog.Info("skip loading data from the node", "reason", err.Error())
 			continue
 		}
 		// load allocators only for know pools (pools which are defined in the config)
 		for poolName, poolData := range a.allocators {
-			nodeIPPoolConfig := nodePoolMgr.GetPoolByName(poolName)
+			nodeIPPoolConfig := poolCfg.GetPoolByName(poolName)
 			allocInfo, err := ipPoolConfigToNodeAllocationInfo(node.Name, nodeIPPoolConfig)
 			logErr := func(err error) {
 				nodeLog.Info("ignore allocation info from node",

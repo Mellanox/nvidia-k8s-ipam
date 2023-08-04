@@ -14,24 +14,19 @@
 package plugin_test
 
 import (
-	"encoding/json"
 	"path"
 
 	"github.com/containernetworking/cni/pkg/skel"
 	cnitypes "github.com/containernetworking/cni/pkg/types"
-	cnitypes100 "github.com/containernetworking/cni/pkg/types/100"
-	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes/fake"
+	"github.com/stretchr/testify/mock"
 
+	nodev1 "github.com/Mellanox/nvidia-k8s-ipam/api/grpc/nvidia/ipam/node/v1"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/cni/plugin"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/cni/types"
-	"github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/version"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/stretchr/testify/mock"
 
 	pluginMocks "github.com/Mellanox/nvidia-k8s-ipam/pkg/cni/plugin/mocks"
 	typesMocks "github.com/Mellanox/nvidia-k8s-ipam/pkg/cni/types/mocks"
@@ -39,40 +34,26 @@ import (
 
 var _ = Describe("plugin tests", func() {
 	var (
-		tmpDir         string
-		p              plugin.Plugin
-		fakeClient     *fake.Clientset
-		testNode       *v1.Node
-		mockExecutor   *pluginMocks.IPAMExecutor
-		mockConfLoader *typesMocks.ConfLoader
-		testConf       *types.NetConf
-		args           *skel.CmdArgs
+		tmpDir           string
+		p                plugin.Plugin
+		mockConfLoader   *typesMocks.ConfLoader
+		mockDaemonClient *pluginMocks.GRPCClient
+		testConf         *types.NetConf
+		args             *skel.CmdArgs
 	)
 
 	BeforeEach(func() {
 		tmpDir = GinkgoT().TempDir()
-
-		testNode = &v1.Node{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-node",
-			},
-		}
-		nodeAnnot := map[string]string{
-			pool.IPBlocksAnnotation: `{"my-pool":
-			{"subnet": "192.168.0.0/16", "startIP": "192.168.0.2",
-			"endIP": "192.168.0.254", "gateway": "192.168.0.1"}}`,
-		}
-		testNode.SetAnnotations(nodeAnnot)
-
-		fakeClient = fake.NewSimpleClientset(testNode)
-		mockExecutor = pluginMocks.NewIPAMExecutor(GinkgoT())
 		mockConfLoader = typesMocks.NewConfLoader(GinkgoT())
+		mockDaemonClient = pluginMocks.NewGRPCClient(GinkgoT())
 
 		p = plugin.Plugin{
-			Name:         plugin.CNIPluginName,
-			Version:      version.GetVersionString(),
-			ConfLoader:   mockConfLoader,
-			IPAMExecutor: mockExecutor,
+			Name:       plugin.CNIPluginName,
+			Version:    version.GetVersionString(),
+			ConfLoader: mockConfLoader,
+			NewGRPCClientFunc: func(_ string) (plugin.GRPCClient, error) {
+				return mockDaemonClient, nil
+			},
 		}
 
 		testConf = &types.NetConf{
@@ -82,12 +63,9 @@ var _ = Describe("plugin tests", func() {
 				IPAM: cnitypes.IPAM{
 					Type: "nv-ipam",
 				},
-				PoolName:  "my-pool",
-				DataDir:   "/foo/bar",
-				LogFile:   path.Join(tmpDir, "nv-ipam.log"),
-				LogLevel:  "debug",
-				NodeName:  "test-node",
-				K8sClient: fakeClient,
+				Pools:    []string{"my-pool"},
+				LogFile:  path.Join(tmpDir, "nv-ipam.log"),
+				LogLevel: "debug",
 			},
 		}
 
@@ -96,54 +74,49 @@ var _ = Describe("plugin tests", func() {
 			Netns:       "/proc/19783/ns",
 			IfName:      "net1",
 			StdinData:   []byte("doesnt-matter"),
+			Args:        "K8S_POD_NAME=test;K8S_POD_NAMESPACE=test",
 		}
 	})
 
 	Context("CmdAdd()", func() {
 		It("executes successfully", func() {
 			mockConfLoader.On("LoadConf", args.StdinData).Return(testConf, nil)
-			mockExecutor.On("ExecAdd", "host-local", mock.Anything).Return(&cnitypes100.Result{}, func(_ string, data []byte) error {
-				// fail if we cannot unmarshal data to host-local config
-				hostLocalConf := &types.HostLocalNetConf{}
-				return json.Unmarshal(data, hostLocalConf)
-			})
-
+			mockDaemonClient.On("Allocate", mock.Anything, &nodev1.AllocateRequest{
+				Parameters: &nodev1.IPAMParameters{
+					Pools:          []string{"my-pool"},
+					CniIfname:      "net1",
+					CniContainerid: "1234",
+					Metadata: &nodev1.IPAMMetadata{
+						K8SPodName:      "test",
+						K8SPodNamespace: "test",
+					},
+				}}).Return(&nodev1.AllocateResponse{
+				Allocations: []*nodev1.AllocationInfo{{
+					Pool:    "my-pool",
+					Ip:      "192.168.1.10/24",
+					Gateway: "192.168.1.1",
+				}},
+			}, nil)
 			err := p.CmdAdd(args)
 			Expect(err).ToNot(HaveOccurred())
-			mockConfLoader.AssertExpectations(GinkgoT())
-			mockExecutor.AssertExpectations(GinkgoT())
 		})
 	})
 
 	Context("CmdDel()", func() {
 		It("executes successfully", func() {
 			mockConfLoader.On("LoadConf", args.StdinData).Return(testConf, nil)
-			mockExecutor.On("ExecDel", "host-local", mock.Anything).Return(func(_ string, data []byte) error {
-				// fail if we cannot unmarshal data to host-local config
-				hostLocalConf := &types.HostLocalNetConf{}
-				return json.Unmarshal(data, hostLocalConf)
-			})
-
+			mockDaemonClient.On("Deallocate", mock.Anything, mock.Anything).Return(nil, nil)
 			err := p.CmdDel(args)
 			Expect(err).ToNot(HaveOccurred())
-			mockConfLoader.AssertExpectations(GinkgoT())
-			mockExecutor.AssertExpectations(GinkgoT())
 		})
 	})
 
 	Context("CmdCheck()", func() {
 		It("executes successfully", func() {
 			mockConfLoader.On("LoadConf", args.StdinData).Return(testConf, nil)
-			mockExecutor.On("ExecCheck", "host-local", mock.Anything).Return(func(_ string, data []byte) error {
-				// fail if we cannot unmarshal data to host-local config
-				hostLocalConf := &types.HostLocalNetConf{}
-				return json.Unmarshal(data, hostLocalConf)
-			})
-
+			mockDaemonClient.On("IsAllocated", mock.Anything, mock.Anything).Return(nil, nil)
 			err := p.CmdCheck(args)
 			Expect(err).ToNot(HaveOccurred())
-			mockConfLoader.AssertExpectations(GinkgoT())
-			mockExecutor.AssertExpectations(GinkgoT())
 		})
 	})
 })

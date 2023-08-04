@@ -21,25 +21,19 @@ import (
 	"strings"
 
 	"github.com/containernetworking/cni/pkg/types"
-	"k8s.io/client-go/kubernetes"
-
-	"github.com/Mellanox/nvidia-k8s-ipam/pkg/cni/k8sclient"
 )
 
 const (
 	// DefaultConfDir is the default dir where configurations are found
 	DefaultConfDir = "/etc/cni/net.d/nv-ipam.d"
-	// DefaultDataDir is the default dir where cni stores data and binaries
-	DefaultDataDir = "/var/lib/cni/nv-ipam"
+	// DefaultDaemonSocket is the default socket path for the daemon
+	DefaultDaemonSocket = "unix:///var/lib/cni/nv-ipam/daemon.sock"
+	// DefaultDaemonCallTimeoutSeconds is the default timeout IPAM daemon calls
+	DefaultDaemonCallTimeoutSeconds = 5
 	// DefaultLogFile default log file path to be used for logging
 	DefaultLogFile = "/var/log/nv-ipam-cni.log"
-
-	// HostLocalDataDir is the relative path within the data dir for host-local state data
-	HostLocalDataDir = "state/host-local"
-	// K8sNodeNameFile is the file name containing k8s node name
-	K8sNodeNameFile = "k8s-node-name"
-	// DefaultKubeConfigFileName is the default name of kubeconfig file
-	DefaultKubeConfigFileName = "nv-ipam.kubeconfig"
+	// DefaultLogLevel is the default log level
+	DefaultLogLevel = "info"
 	// ConfFileName is the name of CNI configuration file found in conf dir
 	ConfFileName = "nv-ipam.conf"
 )
@@ -57,16 +51,16 @@ type IPAMConf struct {
 	types.IPAM
 
 	// PoolName is the name of the pool to be used to allocate IP
-	PoolName   string `json:"poolName,omitempty"`
-	Kubeconfig string `json:"kubeconfig,omitempty"`
-	DataDir    string `json:"dataDir,omitempty"`
-	ConfDir    string `json:"confDir,omitempty"`
-	LogFile    string `json:"logFile,omitempty"`
-	LogLevel   string `json:"logLevel,omitempty"`
+	PoolName string `json:"poolName,omitempty"`
+	// Address of the NVIDIA-ipam DaemonSocket
+	DaemonSocket             string `json:"daemonSocket,omitempty"`
+	DaemonCallTimeoutSeconds int    `json:"daemonCallTimeoutSeconds,omitempty"`
+	ConfDir                  string `json:"confDir,omitempty"`
+	LogFile                  string `json:"logFile,omitempty"`
+	LogLevel                 string `json:"logLevel,omitempty"`
 
-	// internal configuration
-	NodeName  string
-	K8sClient kubernetes.Interface
+	// internal fields
+	Pools []string `json:"-"`
 }
 
 // NetConf is CNI network config
@@ -74,6 +68,7 @@ type NetConf struct {
 	Name       string    `json:"name"`
 	CNIVersion string    `json:"cniVersion"`
 	IPAM       *IPAMConf `json:"ipam"`
+	DeviceID   string    `json:"deviceID"`
 }
 
 type confLoader struct{}
@@ -110,33 +105,34 @@ func (cl *confLoader) LoadConf(bytes []byte) (*NetConf, error) {
 	// overlay config with defaults
 	defaultConf := &IPAMConf{
 		// use network name as pool name by default
-		PoolName:   n.Name,
-		Kubeconfig: filepath.Join(n.IPAM.ConfDir, DefaultKubeConfigFileName),
-		DataDir:    DefaultDataDir,
-		ConfDir:    DefaultConfDir,
-		LogFile:    DefaultLogFile,
-		LogLevel:   "info",
+		PoolName:                 n.Name,
+		ConfDir:                  DefaultConfDir,
+		LogFile:                  DefaultLogFile,
+		DaemonSocket:             DefaultDaemonSocket,
+		DaemonCallTimeoutSeconds: DefaultDaemonCallTimeoutSeconds,
+		LogLevel:                 DefaultLogLevel,
 	}
 	cl.overlayConf(defaultConf, n.IPAM)
 
-	// get Node name
-	p := filepath.Join(n.IPAM.ConfDir, K8sNodeNameFile)
-	data, err := os.ReadFile(p)
+	n.IPAM.Pools, err = parsePoolName(n.IPAM.PoolName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read k8s node name from path: %s. %w", p, err)
-	}
-	n.IPAM.NodeName = strings.TrimSpace(string(data))
-	if n.IPAM.NodeName == "" {
-		return nil, fmt.Errorf("failed to parse k8s node name from path: %s", p)
-	}
-
-	// create k8s client
-	n.IPAM.K8sClient, err = k8sclient.FromKubeconfig(n.IPAM.Kubeconfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create k8s client from kubeconfig path: %s. %w", n.IPAM.Kubeconfig, err)
+		return nil, err
 	}
 
 	return n, nil
+}
+
+func parsePoolName(poolName string) ([]string, error) {
+	pools := strings.Split(poolName, ",")
+	if len(pools) > 2 {
+		return nil, fmt.Errorf("pool field can't contain more then two entries")
+	}
+	for _, p := range pools {
+		if p == "" {
+			return nil, fmt.Errorf("pool field has invalid format")
+		}
+	}
+	return pools, nil
 }
 
 // loadFromConfFile returns *IPAMConf with values from config file located in filePath.
@@ -162,14 +158,6 @@ func (cl *confLoader) overlayConf(from, to *IPAMConf) {
 		to.ConfDir = from.ConfDir
 	}
 
-	if to.DataDir == "" {
-		to.DataDir = from.DataDir
-	}
-
-	if to.Kubeconfig == "" {
-		to.Kubeconfig = from.Kubeconfig
-	}
-
 	if to.LogFile == "" {
 		to.LogFile = from.LogFile
 	}
@@ -180,5 +168,13 @@ func (cl *confLoader) overlayConf(from, to *IPAMConf) {
 
 	if to.PoolName == "" {
 		to.PoolName = from.PoolName
+	}
+
+	if to.DaemonSocket == "" {
+		to.DaemonSocket = from.DaemonSocket
+	}
+
+	if to.DaemonCallTimeoutSeconds == 0 {
+		to.DaemonCallTimeoutSeconds = from.DaemonCallTimeoutSeconds
 	}
 }
