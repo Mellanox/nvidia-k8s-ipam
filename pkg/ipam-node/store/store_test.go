@@ -230,4 +230,12 @@ var _ = Describe("Store", func() {
 			s.Reserve(testPoolName, "other", testNetIfName,
 				types.ReservationMetadata{}, net.ParseIP(testIP))).To(MatchError(storePkg.ErrIPAlreadyReserved))
 	})
+	It("Remove pool data", func() {
+		s, err := store.Open(context.Background())
+		Expect(err).NotTo(HaveOccurred())
+		createTestReservation(s)
+		Expect(s.ListReservations(testPoolName)).NotTo(BeEmpty())
+		s.RemovePool(testPoolName)
+		Expect(s.ListReservations(testPoolName)).To(BeEmpty())
+	})
 })
