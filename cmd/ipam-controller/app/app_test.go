@@ -15,7 +15,7 @@ package app_test
 
 import (
 	"context"
-	"fmt"
+	"reflect"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -23,15 +23,13 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
-	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 
+	ipamv1alpha1 "github.com/Mellanox/nvidia-k8s-ipam/api/v1alpha1"
 	"github.com/Mellanox/nvidia-k8s-ipam/cmd/ipam-controller/app"
 	"github.com/Mellanox/nvidia-k8s-ipam/cmd/ipam-controller/app/options"
-	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/config"
-	"github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
 )
 
 const (
@@ -39,48 +37,6 @@ const (
 	pool2Name = "pool2"
 	pool3Name = "pool3"
 )
-
-func updateConfigMap(data string) {
-	d := map[string]string{config.ConfigMapKey: data}
-	err := k8sClient.Create(ctx, &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: TestConfigMapName, Namespace: TestNamespace},
-		Data:       d,
-	})
-	if err == nil {
-		return
-	}
-	if apiErrors.IsAlreadyExists(err) {
-		configMap := &corev1.ConfigMap{}
-		Expect(k8sClient.Get(
-			ctx, types.NamespacedName{Name: TestConfigMapName, Namespace: TestNamespace}, configMap)).NotTo(HaveOccurred())
-		configMap.Data = d
-		Expect(k8sClient.Update(
-			ctx, configMap)).NotTo(HaveOccurred())
-	} else {
-		Expect(err).NotTo(HaveOccurred())
-	}
-}
-
-var validConfig = fmt.Sprintf(`
-    {
-      "pools": {
-        "%s": { "subnet": "192.168.0.0/16", "perNodeBlockSize": 10 , "gateway": "192.168.0.1"},
-        "%s": { "subnet": "172.16.0.0/16", "perNodeBlockSize": 50 , "gateway": "172.16.0.1"}
-      }
-    }
-`, pool1Name, pool2Name)
-
-// ranges for two nodes only can be allocated
-var validConfig2 = fmt.Sprintf(`
-    {
-      "pools": {
-        "%s": { "subnet": "172.17.0.0/24", "perNodeBlockSize": 100 , "gateway": "172.17.0.1"}
-      },
-      "nodeSelector": {"foo": "bar"}
-    }
-`, pool3Name)
-
-var invalidConfig = `{{{`
 
 func createNode(name string) *corev1.Node {
 	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name}}
@@ -99,13 +55,39 @@ func updateNode(node *corev1.Node) *corev1.Node {
 	return node
 }
 
-func getRangeFromNode(nodeName string) map[string]*pool.IPPool {
-	node := getNode(nodeName)
-	poolCfg, err := pool.NewConfigReader(node)
-	if err != nil {
-		return nil
+func getRangeForNode(nodeName string, poolName string) *ipamv1alpha1.Allocation {
+	allocations := getAllocationsFromIPPools(poolName)
+
+	for _, a := range allocations {
+		alloc := a
+		if a.NodeName == nodeName {
+			return &alloc
+		}
 	}
-	return poolCfg.GetPools()
+	return nil
+}
+
+func getAllocationsFromIPPools(poolName string) []ipamv1alpha1.Allocation {
+	pool := &ipamv1alpha1.IPPool{}
+	Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: TestNamespace, Name: poolName}, pool)).NotTo(HaveOccurred())
+	return pool.Status.Allocations
+}
+
+func checkAllocationExists(allocations []ipamv1alpha1.Allocation, allocation ipamv1alpha1.Allocation) bool {
+	for _, a := range allocations {
+		if reflect.DeepEqual(a, allocation) {
+			return true
+		}
+	}
+	return false
+}
+
+func updatePoolSpec(poolName string, spec ipamv1alpha1.IPPoolSpec) {
+	pool := &ipamv1alpha1.IPPool{}
+	Expect(k8sClient.Get(
+		ctx, types.NamespacedName{Name: poolName, Namespace: TestNamespace}, pool)).NotTo(HaveOccurred())
+	pool.Spec = spec
+	Expect(k8sClient.Update(ctx, pool)).NotTo(HaveOccurred())
 }
 
 // WaitAndCheckForStability wait for condition and then check it is stable for 1 second
@@ -124,39 +106,62 @@ var _ = Describe("App", func() {
 
 			cfg1pools := []string{pool1Name, pool2Name}
 
-			By("Create valid cfg1")
-			updateConfigMap(validConfig)
+			By("Create valid pools")
+			pool1 := &ipamv1alpha1.IPPool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      pool1Name,
+					Namespace: TestNamespace,
+				},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "192.168.0.0/16",
+					Gateway:          "192.168.0.1",
+					PerNodeBlockSize: 10,
+				},
+			}
+			Expect(k8sClient.Create(ctx, pool1)).NotTo(HaveOccurred())
 
-			By("Set annotation with valid ranges for node1")
-			node1 := createNode(testNode1)
-			node1InitialRanges := map[string]*pool.IPPool{pool1Name: {
-				Name:    pool1Name,
-				Subnet:  "192.168.0.0/16",
-				StartIP: "192.168.0.11",
-				EndIP:   "192.168.0.20",
-				Gateway: "192.168.0.1",
+			pool2 := &ipamv1alpha1.IPPool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      pool2Name,
+					Namespace: TestNamespace,
+				},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "172.16.0.0/16",
+					Gateway:          "172.16.0.1",
+					PerNodeBlockSize: 50,
+				},
+			}
+			Expect(k8sClient.Create(ctx, pool2)).NotTo(HaveOccurred())
+
+			By("Update Pools Status with valid ranges for node1 and invalid for node2 (wrong IP count)")
+			createNode(testNode1)
+			createNode(testNode2)
+			node1InitialRanges := map[string]ipamv1alpha1.Allocation{pool1Name: {
+				NodeName: testNode1,
+				StartIP:  "192.168.0.11",
+				EndIP:    "192.168.0.20",
 			}, pool2Name: {
-				Name:    pool2Name,
-				Subnet:  "172.16.0.0/16",
-				StartIP: "172.16.0.1",
-				EndIP:   "172.16.0.50",
-				Gateway: "172.16.0.1",
+				NodeName: testNode1,
+				StartIP:  "172.16.0.1",
+				EndIP:    "172.16.0.50",
 			}}
-			Expect(pool.SetIPBlockAnnotation(node1, node1InitialRanges)).NotTo(HaveOccurred())
-			Expect(updateNode(node1))
-
-			By("Set annotation with invalid ranges for node2")
-			// create annotation for node2 with invalid config (wrong IP count)
-			node2 := createNode(testNode2)
-			node2InitialRanges := map[string]*pool.IPPool{pool1Name: {
-				Name:    pool1Name,
-				Subnet:  "192.168.0.0/16",
-				StartIP: "192.168.0.11",
-				EndIP:   "192.168.0.14",
-				Gateway: "192.168.0.1",
-			}}
-			Expect(pool.SetIPBlockAnnotation(node2, node2InitialRanges)).NotTo(HaveOccurred())
-			Expect(updateNode(node2))
+			pool1.Status = ipamv1alpha1.IPPoolStatus{
+				Allocations: []ipamv1alpha1.Allocation{
+					node1InitialRanges[pool1Name],
+					{
+						NodeName: testNode2,
+						StartIP:  "192.168.0.11",
+						EndIP:    "192.168.0.14",
+					},
+				},
+			}
+			pool2.Status = ipamv1alpha1.IPPoolStatus{
+				Allocations: []ipamv1alpha1.Allocation{
+					node1InitialRanges[pool2Name],
+				},
+			}
+			Expect(k8sClient.Status().Update(ctx, pool1)).NotTo(HaveOccurred())
+			Expect(k8sClient.Status().Update(ctx, pool2)).NotTo(HaveOccurred())
 
 			By("Start controller")
 
@@ -166,75 +171,103 @@ var _ = Describe("App", func() {
 
 			go func() {
 				Expect(app.RunController(logr.NewContext(ctrlCtx, klog.NewKlogr()), cfg, &options.Options{
-					ConfigMapName:      TestConfigMapName,
-					ConfigMapNamespace: TestNamespace,
-					MetricsAddr:        "0", // disable
-					ProbeAddr:          "0", // disable
+					MetricsAddr:      "0", // disable
+					ProbeAddr:        "0", // disable
+					IPPoolsNamespace: TestNamespace,
 				})).NotTo(HaveOccurred())
 				close(controllerStopped)
 			}()
 
-			By("Create node3 without annotation")
-
+			By("Create node3")
 			createNode(testNode3)
 
 			By("Check how controller handled the state")
 			WaitAndCheckForStability(func(g Gomega) {
 				uniqStartEndIPs := map[string]struct{}{}
-				node1Ranges := getRangeFromNode(testNode1)
-				node2Ranges := getRangeFromNode(testNode2)
-				node3Ranges := getRangeFromNode(testNode3)
-				for _, r := range []map[string]*pool.IPPool{node1Ranges, node2Ranges, node3Ranges} {
-					g.Expect(r).To(HaveLen(len(cfg1pools)))
-					for _, p := range cfg1pools {
-						if r[p] != nil {
-							uniqStartEndIPs[r[p].StartIP] = struct{}{}
-							uniqStartEndIPs[r[p].EndIP] = struct{}{}
-							g.Expect(r[p].Gateway).NotTo(BeEmpty())
-							g.Expect(r[p].Subnet).NotTo(BeEmpty())
-						}
+				pool1Allocations := getAllocationsFromIPPools(pool1Name)
+				pool2Allocations := getAllocationsFromIPPools(pool2Name)
+				for _, r := range [][]ipamv1alpha1.Allocation{pool1Allocations, pool2Allocations} {
+					g.Expect(r).To(HaveLen(3)) // 3 allocations, 1 for each node
+					for _, a := range r {
+						uniqStartEndIPs[a.StartIP] = struct{}{}
+						uniqStartEndIPs[a.EndIP] = struct{}{}
 					}
 				}
 				// we should have unique start/end IPs for each node for each pool
 				g.Expect(uniqStartEndIPs).To(HaveLen(len(cfg1pools) * 3 * 2))
 				// node1 should have restored ranges
-				g.Expect(node1Ranges).To(Equal(node1InitialRanges))
+				g.Expect(checkAllocationExists(pool1Allocations, node1InitialRanges[pool1Name])).To(BeTrue())
+				g.Expect(checkAllocationExists(pool2Allocations, node1InitialRanges[pool2Name])).To(BeTrue())
 
 			}, 15, 2)
 
-			By("Set invalid config for controller")
-			updateConfigMap(invalidConfig)
-			time.Sleep(time.Second)
+			By("Set invalid config for pool1")
+			invalidPool1Spec := ipamv1alpha1.IPPoolSpec{
+				Subnet:           "192.168.0.0/16",
+				Gateway:          "10.10.0.1",
+				PerNodeBlockSize: 10,
+			}
+			updatePoolSpec(pool1Name, invalidPool1Spec)
+			Eventually(func(g Gomega) bool {
+				pool := &ipamv1alpha1.IPPool{}
+				g.Expect(k8sClient.Get(
+					ctx, types.NamespacedName{Name: pool1Name, Namespace: TestNamespace}, pool)).NotTo(HaveOccurred())
+				return len(pool.Status.Allocations) == 0
+			}, 30, 5).Should(BeTrue())
 
-			By("Set valid cfg2, which ignores all nodes")
+			By("Create Pool3, with selector which ignores all nodes")
+			// ranges for two nodes only can be allocated
+			pool3Spec := ipamv1alpha1.IPPoolSpec{
+				Subnet:           "172.17.0.0/24",
+				Gateway:          "172.17.0.1",
+				PerNodeBlockSize: 100,
+				NodeSelector: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "foo",
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"bar"},
+								},
+							},
+							MatchFields: nil,
+						},
+					},
+				},
+			}
+			pool3 := &ipamv1alpha1.IPPool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      pool3Name,
+					Namespace: TestNamespace,
+				},
+				Spec: pool3Spec,
+			}
+			Expect(k8sClient.Create(ctx, pool3)).NotTo(HaveOccurred())
 
-			updateConfigMap(validConfig2)
+			Consistently(func(g Gomega) bool {
+				pool := &ipamv1alpha1.IPPool{}
+				g.Expect(k8sClient.Get(
+					ctx, types.NamespacedName{Name: pool3Name, Namespace: TestNamespace}, pool)).NotTo(HaveOccurred())
+				return len(pool.Status.Allocations) == 0
+			}, 30, 5).Should(BeTrue())
 
-			By("Wait for controller to remove annotations")
-			WaitAndCheckForStability(func(g Gomega) {
-				g.Expect(getRangeFromNode(testNode1)).To(BeNil())
-				g.Expect(getRangeFromNode(testNode2)).To(BeNil())
-				g.Expect(getRangeFromNode(testNode3)).To(BeNil())
-			}, 15, 2)
-
-			By("Update nodes to match selector in cfg2")
+			By("Update nodes to match selector in pool3")
 
 			// node1 should have range
-			node1 = getNode(testNode1)
+			node1 := getNode(testNode1)
 			node1.Labels = map[string]string{"foo": "bar"}
 			updateNode(node1)
 			WaitAndCheckForStability(func(g Gomega) {
-				g.Expect(getRangeFromNode(testNode1)).NotTo(BeNil())
+				g.Expect(getRangeForNode(testNode1, pool3Name)).NotTo(BeNil())
 			}, 15, 2)
 
 			// node2 should have range
-			node2 = getNode(testNode2)
+			node2 := getNode(testNode2)
 			node2.Labels = map[string]string{"foo": "bar"}
-			var node2Ranges map[string]*pool.IPPool
 			updateNode(node2)
 			WaitAndCheckForStability(func(g Gomega) {
-				node2Ranges = getRangeFromNode(testNode2)
-				g.Expect(node2Ranges).NotTo(BeNil())
+				g.Expect(getRangeForNode(testNode2, pool3Name)).NotTo(BeNil())
 			}, 15, 2)
 
 			// node3 should have no range, because no free ranges available
@@ -242,18 +275,21 @@ var _ = Describe("App", func() {
 			node3.Labels = map[string]string{"foo": "bar"}
 			updateNode(node3)
 			WaitAndCheckForStability(func(g Gomega) {
-				g.Expect(getRangeFromNode(testNode3)).To(BeNil())
+				g.Expect(getRangeForNode(testNode3, pool3Name)).To(BeNil())
 			}, 15, 5)
 
+			node2Range := getRangeForNode(testNode2, pool3Name)
 			// remove label from node2, node3 should have a range now
 			node2 = getNode(testNode2)
 			node2.Labels = nil
 			updateNode(node2)
 			WaitAndCheckForStability(func(g Gomega) {
-				node3Ranges := getRangeFromNode(testNode3)
-				g.Expect(node3Ranges).NotTo(BeNil())
+				node3Range := getRangeForNode(testNode3, pool3Name)
+				g.Expect(node3Range).NotTo(BeNil())
 				// should reuse ranges from node2
-				g.Expect(node3Ranges).To(Equal(node2Ranges))
+				matchRange := node3Range.StartIP == node2Range.StartIP &&
+					node3Range.EndIP == node2Range.EndIP
+				g.Expect(matchRange).To(BeTrue())
 			}, 15, 2)
 
 			By("Stop controller")

@@ -58,34 +58,40 @@ func (c *Config) Validate() error {
 		return errList.ToAggregate()
 	}
 	for poolName, pool := range c.Pools {
-		if err := cniUtils.ValidateNetworkName(poolName); err != nil {
-			return fmt.Errorf("invalid IP pool name %s, should be compatible with CNI network name", poolName)
-		}
-		_, network, err := net.ParseCIDR(pool.Subnet)
-		if err != nil {
-			return fmt.Errorf("IP pool %s contains invalid subnet: %v", poolName, err)
-		}
+		return ValidatePool(poolName, pool.Subnet, pool.Gateway, pool.PerNodeBlockSize)
+	}
+	return nil
+}
 
-		if pool.PerNodeBlockSize < 2 {
-			return fmt.Errorf("perNodeBlockSize should be at least 2")
-		}
+// ValidatePool validates the IPPool parameters
+func ValidatePool(name string, subnet string, gateway string, blockSize int) error {
+	if err := cniUtils.ValidateNetworkName(name); err != nil {
+		return fmt.Errorf("invalid IP pool name %s, should be compatible with CNI network name", name)
+	}
+	_, network, err := net.ParseCIDR(subnet)
+	if err != nil {
+		return fmt.Errorf("IP pool %s contains invalid subnet: %v", name, err)
+	}
 
-		setBits, bitsTotal := network.Mask.Size()
-		// possibleIPs = net size - network address - broadcast
-		possibleIPs := int(math.Pow(2, float64(bitsTotal-setBits))) - 2
-		if possibleIPs < pool.PerNodeBlockSize {
-			// config is not valid even if only one node exist in the cluster
-			return fmt.Errorf("IP pool subnet contains less available IPs then " +
-				"requested by perNodeBlockSize parameter")
-		}
-		parsedGW := net.ParseIP(pool.Gateway)
-		if len(parsedGW) == 0 {
-			return fmt.Errorf("IP pool contains invalid gateway configuration: invalid IP")
-		}
-		if !network.Contains(parsedGW) {
-			return fmt.Errorf("IP pool contains invalid gateway configuration: " +
-				"gateway is outside of the subnet")
-		}
+	if blockSize < 2 {
+		return fmt.Errorf("perNodeBlockSize should be at least 2")
+	}
+
+	setBits, bitsTotal := network.Mask.Size()
+	// possibleIPs = net size - network address - broadcast
+	possibleIPs := int(math.Pow(2, float64(bitsTotal-setBits))) - 2
+	if possibleIPs < blockSize {
+		// config is not valid even if only one node exist in the cluster
+		return fmt.Errorf("IP pool subnet contains less available IPs then " +
+			"requested by perNodeBlockSize parameter")
+	}
+	parsedGW := net.ParseIP(gateway)
+	if len(parsedGW) == 0 {
+		return fmt.Errorf("IP pool contains invalid gateway configuration: invalid IP")
+	}
+	if !network.Contains(parsedGW) {
+		return fmt.Errorf("IP pool contains invalid gateway configuration: " +
+			"gateway is outside of the subnet")
 	}
 	return nil
 }
