@@ -60,6 +60,8 @@ type Session interface {
 	ListReservations(pool string) []types.Reservation
 	// ListPools return list with names of all known pools
 	ListPools() []string
+	// RemovePool removes information about the pool from the store
+	RemovePool(pool string)
 	// GetLastReservedIP returns last reserved IP for the pool or nil
 	GetLastReservedIP(pool string) net.IP
 	// SetLastReservedIP set last reserved IP fot the pool
@@ -254,6 +256,13 @@ func (s *session) ListPools() []string {
 		pools = append(pools, poolName)
 	}
 	return pools
+}
+
+// RemovePool is the Session interface implementation for session
+func (s *session) RemovePool(pool string) {
+	s.checkClosed()
+	delete(s.tmpData.Pools, pool)
+	s.isModified = true
 }
 
 // GetLastReservedIP is the Session interface implementation for session

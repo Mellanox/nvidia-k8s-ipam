@@ -28,12 +28,14 @@ import (
 
 	storePkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/store"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/types"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
 )
 
 // Cleaner is the interface of the cleaner package.
 // The cleaner periodically scan the store and check for allocations which doesn't have
 // related Pod in the k8s API. If allocation has no Pod for more than X checks, then the cleaner
-// will release the allocation.
+// will release the allocation. Also, the cleaner will remove pool entries in the store if the pool has no
+// allocation and pool configuration is unavailable in the Kubernetes API.
 type Cleaner interface {
 	// Start starts the cleaner loop.
 	// The cleaner loop discovers stale allocations and clean up them.
@@ -43,12 +45,13 @@ type Cleaner interface {
 // New creates and initialize new cleaner instance
 // "checkInterval" defines delay between checks for stale allocations.
 // "checkCountBeforeRelease: defines how many check to do before remove the allocation
-func New(client client.Client, store storePkg.Store,
+func New(client client.Client, store storePkg.Store, poolConfReader pool.ConfigReader,
 	checkInterval time.Duration,
 	checkCountBeforeRelease int) Cleaner {
 	return &cleaner{
 		client:                  client,
 		store:                   store,
+		poolConfReader:          poolConfReader,
 		checkInterval:           checkInterval,
 		checkCountBeforeRelease: checkCountBeforeRelease,
 		staleAllocations:        make(map[string]int),
@@ -58,6 +61,7 @@ func New(client client.Client, store storePkg.Store,
 type cleaner struct {
 	client                  client.Client
 	store                   storePkg.Store
+	poolConfReader          pool.ConfigReader
 	checkInterval           time.Duration
 	checkCountBeforeRelease int
 	// key is <pool_name>|<container_id>|<interface_name>, value is count of failed checks
@@ -84,13 +88,19 @@ func (c *cleaner) Start(ctx context.Context) {
 
 func (c *cleaner) loop(ctx context.Context) error {
 	logger := logr.FromContextOrDiscard(ctx)
-	store, err := c.store.Open(ctx)
+	session, err := c.store.Open(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to open store: %v", err)
 	}
 	allReservations := map[string]struct{}{}
-	for _, poolName := range store.ListPools() {
-		for _, reservation := range store.ListReservations(poolName) {
+	emptyPools := []string{}
+	for _, poolName := range session.ListPools() {
+		poolReservations := session.ListReservations(poolName)
+		if len(poolReservations) == 0 {
+			emptyPools = append(emptyPools, poolName)
+			continue
+		}
+		for _, reservation := range poolReservations {
 			resLogger := logger.WithValues("pool", poolName,
 				"container_id", reservation.ContainerID, "interface_name", reservation.InterfaceName)
 			key := c.getStaleAllocKey(poolName, reservation)
@@ -105,7 +115,7 @@ func (c *cleaner) loop(ctx context.Context) error {
 				Name:      reservation.Metadata.PodName,
 			}, pod)
 			if err != nil && !apiErrors.IsNotFound(err) {
-				store.Cancel()
+				session.Cancel()
 				return fmt.Errorf("failed to read Pod info from the cache: %v", err)
 			}
 			if apiErrors.IsNotFound(err) ||
@@ -128,13 +138,19 @@ func (c *cleaner) loop(ctx context.Context) error {
 		// release reservations which were marked as stale multiple times
 		if count > c.checkCountBeforeRelease {
 			keyFields := strings.SplitN(k, "|", 3)
-			pool, containerID, ifName := keyFields[0], keyFields[1], keyFields[2]
-			logger.Info("stale reservation released", "pool", pool,
+			poolName, containerID, ifName := keyFields[0], keyFields[1], keyFields[2]
+			logger.Info("stale reservation released", "poolName", poolName,
 				"container_id", containerID, "interface_name", ifName)
-			store.ReleaseReservationByID(pool, containerID, ifName)
+			session.ReleaseReservationByID(poolName, containerID, ifName)
 		}
 	}
-	if err := store.Commit(); err != nil {
+	// remove empty pools if they don't have configuration in the k8s API
+	for _, emptyPool := range emptyPools {
+		if p := c.poolConfReader.GetPoolByName(emptyPool); p == nil {
+			session.RemovePool(emptyPool)
+		}
+	}
+	if err := session.Commit(); err != nil {
 		return fmt.Errorf("failed to commit changes to the store: %v", err)
 	}
 	return nil

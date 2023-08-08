@@ -27,6 +27,8 @@ import (
 	cleanerPkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/cleaner"
 	storePkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/store"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/types"
+	poolPkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
+	poolMockPkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/pool/mocks"
 )
 
 const (
@@ -35,6 +37,7 @@ const (
 	testPodName2  = "test-pod2"
 	testPool1     = "pool1"
 	testPool2     = "pool2"
+	testPool3     = "pool3"
 	testIFName    = "net0"
 )
 
@@ -54,52 +57,63 @@ var _ = Describe("Cleaner", func() {
 	It("Cleanup test", func() {
 		done := make(chan interface{})
 		go func() {
+			defer GinkgoRecover()
+			defer close(done)
 			storePath := filepath.Join(GinkgoT().TempDir(), "test_store")
-			storeMgr := storePkg.New(storePath)
-			cleaner := cleanerPkg.New(k8sClient, storeMgr, time.Millisecond*100, 3)
+			store := storePkg.New(storePath)
+
+			poolManager := poolMockPkg.NewManager(GinkgoT())
+			// pool2 has no config in the k8s API
+			poolManager.On("GetPoolByName", testPool2).Return(nil)
+			// pool3 has config in the k8s API
+			poolManager.On("GetPoolByName", testPool3).Return(&poolPkg.IPPool{})
+
+			session, err := store.Open(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			// this will create empty pool config
+			session.SetLastReservedIP(testPool3, net.ParseIP("192.168.33.100"))
+
+			cleaner := cleanerPkg.New(k8sClient, store, poolManager, time.Millisecond*100, 3)
 
 			pod1UID := createPod(testPodName1, testNamespace)
 			_ = createPod(testPodName2, testNamespace)
 
-			store, err := storeMgr.Open(ctx)
-			Expect(err).NotTo(HaveOccurred())
-
 			// should keep these reservations
-			Expect(store.Reserve(testPool1, "id1", testIFName, types.ReservationMetadata{
+			Expect(session.Reserve(testPool1, "id1", testIFName, types.ReservationMetadata{
 				CreateTime:   time.Now().Format(time.RFC3339Nano),
 				PodUUID:      pod1UID,
 				PodName:      testPodName1,
 				PodNamespace: testNamespace,
 			}, net.ParseIP("192.168.1.100"))).NotTo(HaveOccurred())
 
-			Expect(store.Reserve(testPool1, "id2", testIFName, types.ReservationMetadata{},
+			Expect(session.Reserve(testPool1, "id2", testIFName, types.ReservationMetadata{},
 				net.ParseIP("192.168.1.101"))).NotTo(HaveOccurred())
 
 			// should remove these reservations
-			Expect(store.Reserve(testPool1, "id3", testIFName, types.ReservationMetadata{
+			Expect(session.Reserve(testPool1, "id3", testIFName, types.ReservationMetadata{
 				CreateTime:   time.Now().Format(time.RFC3339Nano),
 				PodName:      "unknown",
 				PodNamespace: testNamespace,
 			}, net.ParseIP("192.168.1.102"))).NotTo(HaveOccurred())
-			Expect(store.Reserve(testPool2, "id4", testIFName, types.ReservationMetadata{
+			Expect(session.Reserve(testPool2, "id4", testIFName, types.ReservationMetadata{
 				CreateTime:   time.Now().Format(time.RFC3339Nano),
 				PodName:      "unknown2",
 				PodNamespace: testNamespace,
 			}, net.ParseIP("192.168.2.100"))).NotTo(HaveOccurred())
-			Expect(store.Reserve(testPool2, "id5", testIFName, types.ReservationMetadata{
+			Expect(session.Reserve(testPool2, "id5", testIFName, types.ReservationMetadata{
 				CreateTime:   time.Now().Format(time.RFC3339Nano),
 				PodUUID:      "something", // differ from the reservation
 				PodName:      testPodName2,
 				PodNamespace: testNamespace,
 			}, net.ParseIP("192.168.2.101"))).NotTo(HaveOccurred())
 
-			Expect(store.Commit()).NotTo(HaveOccurred())
+			Expect(session.Commit()).NotTo(HaveOccurred())
 
 			go func() {
 				cleaner.Start(ctx)
 			}()
 			Eventually(func(g Gomega) {
-				store, err := storeMgr.Open(ctx)
+				store, err := store.Open(ctx)
 				g.Expect(err).NotTo(HaveOccurred())
 				defer store.Cancel()
 				g.Expect(store.GetReservationByID(testPool1, "id1", testIFName)).NotTo(BeNil())
@@ -107,9 +121,11 @@ var _ = Describe("Cleaner", func() {
 				g.Expect(store.GetReservationByID(testPool1, "id3", testIFName)).To(BeNil())
 				g.Expect(store.GetReservationByID(testPool2, "id4", testIFName)).To(BeNil())
 				g.Expect(store.GetReservationByID(testPool2, "id5", testIFName)).To(BeNil())
+				g.Expect(store.ListPools()).To(And(
+					ContainElements(testPool1, testPool3),
+					Not(ContainElement(testPool2))))
 			}, 10).Should(Succeed())
 
-			close(done)
 		}()
 		Eventually(done, time.Minute).Should(BeClosed())
 	})

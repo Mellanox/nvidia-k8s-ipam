@@ -308,6 +308,39 @@ func (_c *Session_ReleaseReservationByID_Call) RunAndReturn(run func(string, str
 	return _c
 }
 
+// RemovePool provides a mock function with given fields: pool
+func (_m *Session) RemovePool(pool string) {
+	_m.Called(pool)
+}
+
+// Session_RemovePool_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'RemovePool'
+type Session_RemovePool_Call struct {
+	*mock.Call
+}
+
+// RemovePool is a helper method to define mock.On call
+//   - pool string
+func (_e *Session_Expecter) RemovePool(pool interface{}) *Session_RemovePool_Call {
+	return &Session_RemovePool_Call{Call: _e.mock.On("RemovePool", pool)}
+}
+
+func (_c *Session_RemovePool_Call) Run(run func(pool string)) *Session_RemovePool_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(string))
+	})
+	return _c
+}
+
+func (_c *Session_RemovePool_Call) Return() *Session_RemovePool_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *Session_RemovePool_Call) RunAndReturn(run func(string)) *Session_RemovePool_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Reserve provides a mock function with given fields: pool, id, ifName, meta, address
 func (_m *Session) Reserve(pool string, id string, ifName string, meta types.ReservationMetadata, address net.IP) error {
 	ret := _m.Called(pool, id, ifName, meta, address)
