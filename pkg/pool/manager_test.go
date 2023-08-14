@@ -17,31 +17,25 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	corev1 "k8s.io/api/core/v1"
-
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
 )
 
 var _ = Describe("Manager", func() {
 	It("Update pool data", func() {
-		testPools := make(map[string]*pool.IPPool)
 		testPoolName := "my-pool-1"
-		testPools[testPoolName] = &pool.IPPool{
-			Name:    "my-pool-1",
+		testPool := &pool.IPPool{
+			Name:    testPoolName,
 			Subnet:  "192.168.0.0/16",
 			StartIP: "192.168.0.2",
 			EndIP:   "192.168.0.254",
 			Gateway: "192.168.0.1",
 		}
-		node := &corev1.Node{}
-		Expect(pool.SetIPBlockAnnotation(node, testPools)).NotTo(HaveOccurred())
-
 		mgr := pool.NewManager()
 		Expect(mgr.GetPoolByName(testPoolName)).To(BeNil())
-		Expect(mgr.Update(node)).NotTo(HaveOccurred())
+		mgr.UpdatePool(testPool)
 		Expect(mgr.GetPoolByName(testPoolName)).NotTo(BeNil())
 		Expect(mgr.GetPools()).To(HaveLen(1))
-		mgr.Reset()
+		mgr.RemovePool(testPoolName)
 		Expect(mgr.GetPoolByName(testPoolName)).To(BeNil())
 	})
 })

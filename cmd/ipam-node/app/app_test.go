@@ -27,12 +27,13 @@ import (
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 
 	nodev1 "github.com/Mellanox/nvidia-k8s-ipam/api/grpc/nvidia/ipam/node/v1"
+	ipamv1alpha1 "github.com/Mellanox/nvidia-k8s-ipam/api/v1alpha1"
 	"github.com/Mellanox/nvidia-k8s-ipam/cmd/ipam-node/app"
 	"github.com/Mellanox/nvidia-k8s-ipam/cmd/ipam-node/app/options"
-	"github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
 )
 
 const (
@@ -43,27 +44,67 @@ const (
 	testNamespace = "default"
 )
 
-func createTestNode() *corev1.Node {
-	nodeObj := &corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{Name: testNodeName},
+func createTestPools() {
+	pool1 := &ipamv1alpha1.IPPool{
+		ObjectMeta: metav1.ObjectMeta{Name: testPoolName1, Namespace: testNamespace},
+		Spec: ipamv1alpha1.IPPoolSpec{
+			Subnet:           "192.168.0.0/16",
+			PerNodeBlockSize: 252,
+			Gateway:          "192.168.0.1",
+		},
 	}
-	ExpectWithOffset(1, pool.SetIPBlockAnnotation(nodeObj, map[string]*pool.IPPool{
-		testPoolName1: {
-			Name:    testPoolName1,
-			Subnet:  "192.168.0.0/16",
-			StartIP: "192.168.0.2",
-			EndIP:   "192.168.0.254",
-			Gateway: "192.168.0.1",
+	ExpectWithOffset(1, k8sClient.Create(ctx, pool1))
+
+	pool2 := &ipamv1alpha1.IPPool{
+		ObjectMeta: metav1.ObjectMeta{Name: testPoolName2, Namespace: testNamespace},
+		Spec: ipamv1alpha1.IPPoolSpec{
+			Subnet:           "10.100.0.0/16",
+			PerNodeBlockSize: 252,
+			Gateway:          "10.100.0.1",
 		},
-		testPoolName2: {Name: testPoolName2,
-			Subnet:  "10.100.0.0/16",
-			StartIP: "10.100.0.2",
-			EndIP:   "10.100.0.254",
-			Gateway: "10.100.0.1",
-		},
-	})).NotTo(HaveOccurred())
-	ExpectWithOffset(1, k8sClient.Create(ctx, nodeObj))
-	return nodeObj
+	}
+	ExpectWithOffset(1, k8sClient.Create(ctx, pool2))
+
+	// Update statuses with range allocation
+	Eventually(func(g Gomega) error {
+		status := ipamv1alpha1.IPPoolStatus{
+			Allocations: []ipamv1alpha1.Allocation{
+				{
+					NodeName: testNodeName,
+					StartIP:  "192.168.0.2",
+					EndIP:    "192.168.0.254",
+				},
+			},
+		}
+		return updatePoolStatus(testPoolName1, status)
+	}, 30, 5).Should(Not(HaveOccurred()))
+
+	Eventually(func(g Gomega) error {
+		status := ipamv1alpha1.IPPoolStatus{
+			Allocations: []ipamv1alpha1.Allocation{
+				{
+					NodeName: testNodeName,
+					StartIP:  "10.100.0.2",
+					EndIP:    "10.100.0.254",
+				},
+			},
+		}
+		return updatePoolStatus(testPoolName2, status)
+	}, 30, 5).Should(Not(HaveOccurred()))
+}
+
+func updatePoolStatus(poolName string, status ipamv1alpha1.IPPoolStatus) error {
+	pool := &ipamv1alpha1.IPPool{}
+	err := k8sClient.Get(ctx, types.NamespacedName{Name: poolName, Namespace: testNamespace}, pool)
+	if err != nil {
+		return err
+	}
+	pool.Status = status
+	err = k8sClient.Status().Update(ctx, pool)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func createTestPod() *corev1.Pod {
@@ -98,6 +139,7 @@ func getOptions(testDir string) *options.Options {
 	opts.CNIBinDir = cniBinDir
 	opts.CNIConfDir = cniConfDir
 	opts.CNIDaemonSocket = daemonSocket
+	opts.PoolsNamespace = testNamespace
 	return opts
 }
 
@@ -122,7 +164,7 @@ var _ = Describe("IPAM Node daemon", func() {
 			testDir := GinkgoT().TempDir()
 			opts := getOptions(testDir)
 
-			createTestNode()
+			createTestPools()
 			pod := createTestPod()
 
 			ctx = logr.NewContext(ctx, klog.NewKlogr())

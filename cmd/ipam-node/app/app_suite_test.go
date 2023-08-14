@@ -19,9 +19,12 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
+
+	ipamv1alpha1 "github.com/Mellanox/nvidia-k8s-ipam/api/v1alpha1"
 )
 
 var (
@@ -39,17 +42,25 @@ func TestApp(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	By("bootstrapping test environment")
-	testEnv = &envtest.Environment{}
+	var err error
+	err = ipamv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	testEnv = &envtest.Environment{
+		CRDDirectoryPaths: []string{"../../../deploy/crds"},
+		CRDInstallOptions: envtest.CRDInstallOptions{
+			ErrorIfPathMissing: true,
+		},
+	}
 
 	ctx, cFunc = context.WithCancel(context.Background())
 
-	var err error
 	// cfg is defined in this file globally.
 	cfg, err = testEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 
-	k8sClient, err = client.New(cfg, client.Options{})
+	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 })

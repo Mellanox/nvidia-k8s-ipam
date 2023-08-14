@@ -7,8 +7,15 @@ rules:
   - apiGroups:
       - ""
     resources:
-      - nodes
       - pods
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - nv-ipam.nvidia.com
+    resources:
+      - ippools
     verbs:
       - get
       - list
@@ -70,6 +77,10 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
+            - name: IPPOOLS_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
           command: [ "/ipam-node" ]
           args:
             - --node-name=$(NODE_NAME)
@@ -83,6 +94,7 @@ spec:
             - --cni-conf-dir=/etc/cni/net.d/nv-ipam.d
             - --cni-log-file=/var/log/nv-ipam-cni.log
             - --cni-log-level=info # log level for shim CNI
+            - --ippools-namespace=$(IPPOOLS_NAMESPACE)
           resources:
             requests:
               cpu: "100m"

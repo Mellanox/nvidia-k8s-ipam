@@ -31,8 +31,6 @@ import (
 	"github.com/google/renameio/v2"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -40,7 +38,6 @@ import (
 	"k8s.io/component-base/term"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	// register json format for logger
@@ -50,13 +47,14 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	nodev1 "github.com/Mellanox/nvidia-k8s-ipam/api/grpc/nvidia/ipam/node/v1"
+	ipamv1alpha1 "github.com/Mellanox/nvidia-k8s-ipam/api/v1alpha1"
 	"github.com/Mellanox/nvidia-k8s-ipam/cmd/ipam-node/app/options"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/cmdutils"
 	cniTypes "github.com/Mellanox/nvidia-k8s-ipam/pkg/cni/types"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/allocator"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/cleaner"
-	nodectrl "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/controllers/node"
+	ippoolctrl "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/controllers/ippool"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/grpc/middleware"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/handlers"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/migrator"
@@ -116,7 +114,8 @@ func RunNodeDaemon(ctx context.Context, config *rest.Config, opts *options.Optio
 	ctrl.SetLogger(logger)
 
 	logger.Info("start IPAM node daemon",
-		"version", version.GetVersionString(), "node", opts.NodeName)
+		"version", version.GetVersionString(), "node", opts.NodeName,
+		"IPPools Namespace", opts.PoolsNamespace)
 
 	if err := deployShimCNI(logger, opts); err != nil {
 		return err
@@ -129,15 +128,16 @@ func RunNodeDaemon(ctx context.Context, config *rest.Config, opts *options.Optio
 		return err
 	}
 
+	if err := ipamv1alpha1.AddToScheme(scheme); err != nil {
+		logger.Error(err, "failed to register ipamv1alpha1 scheme")
+		return err
+	}
+
 	poolManager := poolPkg.NewManager()
 
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
-		Scheme: scheme,
-		NewCache: cache.BuilderWithOptions(cache.Options{
-			SelectorsByObject: cache.SelectorsByObject{&corev1.Node{}: cache.ObjectSelector{
-				Field: fields.ParseSelectorOrDie(fmt.Sprintf("metadata.name=%s", opts.NodeName)),
-			}},
-		}),
+		Scheme:                 scheme,
+		Namespace:              opts.PoolsNamespace,
 		MetricsBindAddress:     opts.MetricsAddr,
 		Port:                   9443,
 		HealthProbeBindAddress: opts.ProbeAddr,
@@ -146,12 +146,14 @@ func RunNodeDaemon(ctx context.Context, config *rest.Config, opts *options.Optio
 		logger.Error(err, "unable to initialize manager")
 		return err
 	}
-	if err = (&nodectrl.NodeReconciler{
+
+	if err = (&ippoolctrl.IPPoolReconciler{
 		PoolManager: poolManager,
 		Client:      mgr.GetClient(),
 		Scheme:      mgr.GetScheme(),
+		NodeName:    opts.NodeName,
 	}).SetupWithManager(mgr); err != nil {
-		logger.Error(err, "unable to create controller", "controller", "Node")
+		logger.Error(err, "unable to create controller", "controller", "IPPool")
 		return err
 	}
 

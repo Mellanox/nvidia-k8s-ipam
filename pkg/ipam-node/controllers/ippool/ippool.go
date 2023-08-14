@@ -1,0 +1,86 @@
+/*
+ Copyright 2023, NVIDIA CORPORATION & AFFILIATES
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+     http://www.apache.org/licenses/LICENSE-2.0
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+*/
+
+package controllers
+
+import (
+	"context"
+
+	apiErrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	ipamv1alpha1 "github.com/Mellanox/nvidia-k8s-ipam/api/v1alpha1"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
+)
+
+// IPPoolReconciler reconciles Node objects
+type IPPoolReconciler struct {
+	PoolManager pool.Manager
+	client.Client
+	Scheme   *runtime.Scheme
+	NodeName string
+}
+
+// Reconcile contains logic to sync IPPool objects
+func (r *IPPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	reqLog := log.FromContext(ctx)
+	ipPool := &ipamv1alpha1.IPPool{}
+	err := r.Client.Get(ctx, req.NamespacedName, ipPool)
+	if err != nil {
+		if apiErrors.IsNotFound(err) {
+			reqLog.Info("Pool not found, removing from PoolManager")
+			r.PoolManager.RemovePool(req.Name)
+			return ctrl.Result{}, nil
+		}
+		reqLog.Error(err, "failed to get Pool object from the cache")
+		return ctrl.Result{}, err
+	}
+<<<<<<< Updated upstream
+	reqLog.Info("Notification on Pool", "name", ipPool.Name)
+=======
+	reqLog.Info("Notification on IPPool", "name", ipPool.Name)
+	found := false
+>>>>>>> Stashed changes
+	for _, alloc := range ipPool.Status.Allocations {
+		if alloc.NodeName == r.NodeName {
+			pool := &pool.IPPool{
+				Name:    ipPool.Name,
+				Subnet:  ipPool.Spec.Subnet,
+				Gateway: ipPool.Spec.Gateway,
+				StartIP: alloc.StartIP,
+				EndIP:   alloc.EndIP,
+			}
+<<<<<<< Updated upstream
+			r.PoolManager.UpdatePool(pool)
+=======
+			r.PoolManager.UpdatePool(ipPool)
+			found = true
+>>>>>>> Stashed changes
+			break
+		}
+	}
+	if !found {
+		r.PoolManager.RemovePool(req.Name)
+	}
+	return ctrl.Result{}, nil
+}
+
+// SetupWithManager sets up the controller with the Manager.
+func (r *IPPoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&ipamv1alpha1.IPPool{}).
+		Complete(r)
+}
