@@ -59,6 +59,7 @@ import (
 	nodectrl "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/controllers/node"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/grpc/middleware"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/handlers"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/migrator"
 	storePkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/store"
 	poolPkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/version"
@@ -188,6 +189,11 @@ func RunNodeDaemon(ctx context.Context, config *rest.Config, opts *options.Optio
 		return err
 	}
 	s.Cancel()
+	if err := migrator.New(store).Migrate(ctx); err != nil {
+		logger.Error(err, fmt.Sprintf("failed to migrate host-local IPAM store, "+
+			"set %s env variable to disable migration", migrator.EnvDisableMigration))
+		return err
+	}
 
 	grpcServer, listener, err := initGRPCServer(opts, logger, poolManager, store)
 	if err != nil {
