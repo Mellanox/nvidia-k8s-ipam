@@ -147,6 +147,7 @@ rules:
       - get
       - list
       - watch
+      - delete
   - apiGroups:
       - nv-ipam.nvidia.com
     resources:
@@ -155,6 +156,7 @@ rules:
       - get
       - list
       - watch
+      - create
   - apiGroups:
       - nv-ipam.nvidia.com
     resources:

@@ -26,7 +26,7 @@ import (
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
 )
 
-// IPPoolReconciler reconciles Node objects
+// IPPoolReconciler reconciles IPPool objects
 type IPPoolReconciler struct {
 	PoolManager pool.Manager
 	client.Client
@@ -41,34 +41,26 @@ func (r *IPPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	err := r.Client.Get(ctx, req.NamespacedName, ipPool)
 	if err != nil {
 		if apiErrors.IsNotFound(err) {
-			reqLog.Info("Pool not found, removing from PoolManager")
+			reqLog.Info("IPPool not found, removing from PoolManager")
 			r.PoolManager.RemovePool(req.Name)
 			return ctrl.Result{}, nil
 		}
-		reqLog.Error(err, "failed to get Pool object from the cache")
+		reqLog.Error(err, "failed to get IPPool object from the cache")
 		return ctrl.Result{}, err
 	}
-<<<<<<< Updated upstream
-	reqLog.Info("Notification on Pool", "name", ipPool.Name)
-=======
 	reqLog.Info("Notification on IPPool", "name", ipPool.Name)
 	found := false
->>>>>>> Stashed changes
 	for _, alloc := range ipPool.Status.Allocations {
 		if alloc.NodeName == r.NodeName {
-			pool := &pool.IPPool{
+			ipPool := &pool.IPPool{
 				Name:    ipPool.Name,
 				Subnet:  ipPool.Spec.Subnet,
 				Gateway: ipPool.Spec.Gateway,
 				StartIP: alloc.StartIP,
 				EndIP:   alloc.EndIP,
 			}
-<<<<<<< Updated upstream
-			r.PoolManager.UpdatePool(pool)
-=======
 			r.PoolManager.UpdatePool(ipPool)
 			found = true
->>>>>>> Stashed changes
 			break
 		}
 	}

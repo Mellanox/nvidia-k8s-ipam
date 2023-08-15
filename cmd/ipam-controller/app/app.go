@@ -18,6 +18,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
@@ -28,6 +29,7 @@ import (
 	"k8s.io/component-base/term"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
@@ -42,6 +44,7 @@ import (
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
 	poolctrl "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/controllers/ippool"
 	nodectrl "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/controllers/node"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/migrator"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/version"
 )
 
@@ -122,6 +125,19 @@ func RunController(ctx context.Context, config *rest.Config, opts *options.Optio
 
 	if err != nil {
 		logger.Error(err, "unable to start manager")
+		return err
+	}
+
+	k8sClient, err := client.New(config,
+		client.Options{Scheme: mgr.GetScheme(), Mapper: mgr.GetRESTMapper()})
+	if err != nil {
+		logger.Error(err, "failed to create k8sClient client")
+		os.Exit(1)
+	}
+
+	if err := migrator.Migrate(ctx, k8sClient, opts.IPPoolsNamespace); err != nil {
+		logger.Error(err, fmt.Sprintf("failed to migrate NV-IPAM config from ConfigMap, "+
+			"set %s env variable to disable migration", migrator.EnvDisableMigration))
 		return err
 	}
 
