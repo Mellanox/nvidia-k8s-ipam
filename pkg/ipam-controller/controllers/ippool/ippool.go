@@ -39,7 +39,6 @@ import (
 
 	ipamv1alpha1 "github.com/Mellanox/nvidia-k8s-ipam/api/v1alpha1"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/allocator"
-	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/config"
 )
 
 // IPPoolReconciler reconciles Pool objects
@@ -78,9 +77,9 @@ func (r *IPPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 	reqLog.Info("Notification on IPPool", "name", pool.Name)
 
-	err = config.ValidatePool(pool.Name, pool.Spec.Subnet, pool.Spec.Gateway, pool.Spec.PerNodeBlockSize)
-	if err != nil {
-		return r.handleInvalidSpec(ctx, err, pool)
+	errList := pool.Validate()
+	if len(errList) != 0 {
+		return r.handleInvalidSpec(ctx, errList.ToAggregate(), pool)
 	}
 
 	nodeList := &corev1.NodeList{}

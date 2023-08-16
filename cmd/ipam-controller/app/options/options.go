@@ -29,6 +29,7 @@ func New() *Options {
 		MetricsAddr:             ":8080",
 		ProbeAddr:               ":8081",
 		EnableLeaderElection:    false,
+		EnableWebHook:           false,
 		LeaderElectionNamespace: "kube-system",
 		IPPoolsNamespace:        "kube-system",
 	}
@@ -40,6 +41,7 @@ type Options struct {
 	MetricsAddr             string
 	ProbeAddr               string
 	EnableLeaderElection    bool
+	EnableWebHook           bool
 	LeaderElectionNamespace string
 	IPPoolsNamespace        string
 }
@@ -58,6 +60,8 @@ func (o *Options) AddNamedFlagSets(sharedFS *cliflag.NamedFlagSets) {
 		"The address the metric endpoint binds to.")
 	controllerFS.StringVar(&o.ProbeAddr, "health-probe-bind-address",
 		o.ProbeAddr, "The address the probe endpoint binds to.")
+	controllerFS.BoolVar(&o.EnableWebHook, "webhook", o.EnableWebHook,
+		"Enable validating webhook server as a part of the controller")
 	controllerFS.BoolVar(&o.EnableLeaderElection, "leader-elect", o.EnableLeaderElection,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
