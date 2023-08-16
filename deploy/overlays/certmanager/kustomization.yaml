@@ -1,0 +1,59 @@
+# Adds namespace to all resources.
+namespace: kube-system
+
+# Value of this field is prepended to the
+# names of all resources, e.g. a deployment named
+namePrefix: nv-ipam-
+
+# Labels to add to all resources and selectors.
+commonLabels:
+  app: nvidia-k8s-ipam
+
+resources:
+  - ../../crds
+  - ../../manifests/controller
+  - ../../manifests/node
+  - ../../manifests/webhook
+  - ../../manifests/certmanager
+
+patches:
+  - patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --webhook=true
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: controller
+      namespace: system
+  - path: controller_webhook_patch.yaml
+  - path: webhook_config_patch.yaml
+
+vars:
+  - name: CERTIFICATE_NAMESPACE # namespace of the certificate CR
+    objref:
+      kind: Certificate
+      group: cert-manager.io
+      version: v1
+      name: serving-cert # this name should match the one in certificate.yaml
+    fieldref:
+      fieldpath: metadata.namespace
+  - name: CERTIFICATE_NAME
+    objref:
+      kind: Certificate
+      group: cert-manager.io
+      version: v1
+      name: serving-cert # this name should match the one in certificate.yaml
+  - name: SERVICE_NAMESPACE # namespace of the service
+    objref:
+      kind: Service
+      version: v1
+      name: webhook-service
+    fieldref:
+      fieldpath: metadata.namespace
+  - name: SERVICE_NAME
+    objref:
+      kind: Service
+      version: v1
+      name: webhook-service

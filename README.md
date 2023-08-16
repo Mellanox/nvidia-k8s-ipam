@@ -32,6 +32,16 @@ NVIDIA IPAM plugin consists of 3 main components:
 A Kubernetes(K8s) controller that Watches on IPPools CRs in a predefined Namespace.
 It then proceeds by assiging each node via IPPools Status a cluster unique range of IPs of the defined IP Pools.
 
+#### Validation webhook
+
+ipam-controller implements validation webhook for IPPool resource.
+The webhook can prevent the creation of IPPool resources with invalid configurations. 
+Supported X.509 certificate management system should be available in the cluster to enable the webhook.
+Currently supported systems are [certmanager](https://cert-manager.io/) and
+[Openshift certificate management](https://docs.openshift.com/container-platform/4.13/security/certificates/service-serving-certificate.html)
+
+Activation of the validation webhook is optional. Check the [Deployment](#deployment) section for details.
+
 ### ipam-node
 
 The daemon is responsible for:
@@ -144,48 +154,50 @@ ipam-controller accepts configuration using command line flags and IPPools CRs.
 ```text
 Logging flags:
 
-      --log-flush-frequency duration                                                                                                                                                           
+      --log-flush-frequency duration                                                                                                                                                                  
                 Maximum number of seconds between log flushes (default 5s)
-      --log-json-info-buffer-size quantity                                                                                                                                                     
-                [Alpha] In JSON format with split output streams, the info messages can be buffered for a while to increase performance. The default value of zero bytes disables buffering. The
-                size can be specified as number of bytes (512), multiples of 1000 (1K), multiples of 1024 (2Ki), or powers of those (3M, 4G, 5Mi, 6Gi). Enable the LoggingAlphaOptions feature
-                gate to use this.
-      --log-json-split-stream                                                                                                                                                                  
-                [Alpha] In JSON format, write error messages to stderr and info messages to stdout. The default is to write a single stream to stdout. Enable the LoggingAlphaOptions feature gate
-                to use this.
-      --logging-format string                                                                                                                                                                  
+      --log-json-info-buffer-size quantity                                                                                                                                                            
+                [Alpha] In JSON format with split output streams, the info messages can be buffered for a while to increase performance. The default value of zero bytes disables buffering. The size can
+                be specified as number of bytes (512), multiples of 1000 (1K), multiples of 1024 (2Ki), or powers of those (3M, 4G, 5Mi, 6Gi). Enable the LoggingAlphaOptions feature gate to use this.
+      --log-json-split-stream                                                                                                                                                                         
+                [Alpha] In JSON format, write error messages to stderr and info messages to stdout. The default is to write a single stream to stdout. Enable the LoggingAlphaOptions feature gate to use
+                this.
+      --logging-format string                                                                                                                                                                         
                 Sets the log format. Permitted formats: "json" (gated by LoggingBetaOptions), "text". (default "text")
-  -v, --v Level                                                                                                                                                                                
+  -v, --v Level                                                                                                                                                                                       
                 number for the log level verbosity
-      --vmodule pattern=N,...                                                                                                                                                                  
+      --vmodule pattern=N,...                                                                                                                                                                         
                 comma-separated list of pattern=N settings for file-filtered logging (only works for text log format)
 
 Common flags:
 
-      --feature-gates mapStringBool                                                                                                                                                            
+      --feature-gates mapStringBool                                                                                                                                                                   
                 A set of key=value pairs that describe feature gates for alpha/experimental features. Options are:
                 AllAlpha=true|false (ALPHA - default=false)
                 AllBeta=true|false (BETA - default=false)
                 ContextualLogging=true|false (ALPHA - default=false)
                 LoggingAlphaOptions=true|false (ALPHA - default=false)
                 LoggingBetaOptions=true|false (BETA - default=true)
-      --version                                                                                                                                                                                
+      --version                                                                                                                                                                                       
                 print binary version and exit
 
 Controller flags:
 
-      --health-probe-bind-address string                                                                                                                                                       
+      --health-probe-bind-address string                                                                                                                                                              
                 The address the probe endpoint binds to. (default ":8081")
-      --kubeconfig string                                                                                                                                                                      
+      --ippools-namespace string                                                                                                                                                                      
+                The name of the namespace to watch for IPPools CRs (default "kube-system")
+      --kubeconfig string                                                                                                                                                                             
                 Paths to a kubeconfig. Only required if out-of-cluster.
-      --leader-elect                                                                                                                                                                           
+      --leader-elect                                                                                                                                                                                  
                 Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.
-      --leader-elect-namespace string                                                                                                                                                          
+      --leader-elect-namespace string                                                                                                                                                                 
                 Determines the namespace in which the leader election resource will be created. (default "kube-system")
-      --metrics-bind-address string                                                                                                                                                            
+      --metrics-bind-address string                                                                                                                                                                   
                 The address the metric endpoint binds to. (default ":8080")
-      --ippools-namespace string
-                The name of the namespace to watch for IPPools CRs. (default "kube-system")
+      --webhook                                                                                                                                                                                       
+                Enable validating webhook server as a part of the controller
+
 ```
 
 #### IPPool CR
@@ -331,11 +343,28 @@ interface should have two IP addresses: one IPv4 and one IPv6. (default: network
 
 ### Deploy IPAM plugin
 
-> _NOTE:_ This command will deploy latest dev build with default configuration
+> _NOTE:_ These commands will deploy latest dev build with default configuration
+
+The plugin can be deployed with kustomize.
+
+Supported overlays are:
+
+`no-webhook` - deploy without webhook
 
 ```shell
-kubectl apply -f https://raw.githubusercontent.com/Mellanox/nvidia-k8s-ipam/main/deploy/crds/nv-ipam.nvidia.com_ippools.yaml
-kubectl apply -f https://raw.githubusercontent.com/Mellanox/nvidia-k8s-ipam/main/deploy/nv-ipam.yaml
+kubectl kustomize https://github.com/mellanox/nvidia-k8s-ipam/deploy/overlays/no-webhook?ref=main | kubectl apply -f -
+```
+
+`certmanager` - deploy with webhook to the Kubernetes cluster where certmanager is available
+
+```shell
+kubectl kustomize https://github.com/mellanox/nvidia-k8s-ipam/deploy/overlays/certmanager?ref=main | kubectl apply -f -
+```
+
+`openshift` - deploy with webhook to the Openshift cluster
+
+```shell
+kubectl kustomize https://github.com/mellanox/nvidia-k8s-ipam/deploy/overlays/openshift?ref=main | kubectl apply -f -
 ```
 
 ### Create IPPool CR
