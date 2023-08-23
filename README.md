@@ -29,9 +29,8 @@ NVIDIA IPAM plugin consists of 3 main components:
 
 ### ipam-controller
 
-A Kubernetes(K8s) controller that Watches on a predefined K8s ConfigMap for defined IP Pools.
-It then proceeds in reconciling K8s Node objects by assiging each node via `ipam.nvidia.com/ip-blocks`
-annotation a cluster unique range of IPs of the defined IP Pools.
+A Kubernetes(K8s) controller that Watches on IPPools CRs in a predefined Namespace.
+It then proceeds by assiging each node via IPPools Status a cluster unique range of IPs of the defined IP Pools.
 
 ### ipam-node
 
@@ -43,7 +42,7 @@ The daemon is responsible for:
 A node daemon provides GRPC service, which nv-ipam CNI plugin uses to request IP address allocation/deallocation.
 IPs are allocated from the provided IP Block assigned by ipam-controller for the node.
 To determine the cluster unique IP Block for the defined IP Pool, ipam-node watches K8s API
-for the Node object and extracts IP Block information from node annotation.
+for the IPPool objects and extracts IP Block information from IPPool Status.
 
 ### nv-ipam
 
@@ -53,30 +52,65 @@ To allocate/deallocate IP address nv-ipam calls GRPC API of ipam-node daemon.
 ### IP allocation flow
 
 1. User (cluster administrator) defines a set of named IP Pools to be used for IP allocation
-of container interfaces via Kubernetes ConfigMap (more information in [Configuration](#configuration) section)
-
-_Example_:
-
-```json
-{
-    "pools":  {
-        "my-pool": {"subnet": "192.188.0.0/16", "perNodeBlockSize": 24, "gateway": "192.168.0.1"}
-    },
-    "nodeSelector": {
-      "kubernetes.io/os": "linux"
-    }
-}
-```
-
-2. ipam-controller calculates and assigns unique IP Blocks for each Node via annotation
+of container interfaces via IPPool CRD (more information in [Configuration](#configuration) section)
 
 _Example_:
 
 ```yaml
-annotations:
-    ipam.nvidia.com/ip-blocks: '{
-    "my-pool": {"startIP": "192.168.0.2", "endIP": "192.168.0.25", "gateway": "192.168.0.1", "subnet": "192.168.0.0/16"}
-    }'
+apiVersion: nv-ipam.nvidia.com/v1alpha1
+kind: IPPool
+metadata:
+  name: pool1
+  namespace: kube-system
+spec:
+  subnet: 192.168.0.0/16
+  perNodeBlockSize: 24
+  gateway: 192.168.0.1
+  nodeSelector:
+    nodeSelectorTerms:
+    - matchExpressions:
+        - key: kubernetes.io/role
+          operator: In
+          values:
+            - worker
+```
+
+2. ipam-controller calculates and assigns unique IP Blocks for each Node via IPPool Status:
+
+_Example_:
+
+```yaml
+apiVersion: nv-ipam.nvidia.com/v1alpha1
+kind: IPPool
+metadata:
+  name: pool1
+  namespace: kube-system
+spec:
+  gateway: 192.168.0.1
+  nodeSelector:
+    nodeSelectorTerms:
+    - matchExpressions:
+      - key: kubernetes.io/role
+        operator: In
+        values:
+        - worker
+  perNodeBlockSize: 24
+  subnet: 192.168.0.0/16
+status:
+  allocations:
+  - endIP: 192.168.0.24
+    nodeName: host-a
+    startIP: 192.168.0.1
+  - endIP: 192.168.0.48
+    nodeName: host-b
+    startIP: 192.168.0.25
+  - endIP: 192.168.0.72
+    nodeName: host-c
+    startIP: 192.168.0.49
+  - endIP: 192.168.0.96
+    nodeName: k8s-master
+    startIP: 192.168.0.73
+
 ```
 
 3. User specifies nv-ipam as IPAM plugin in CNI configuration
@@ -103,7 +137,7 @@ corresponding IP Pool that was allocated for the node
 
 ### ipam-controller configuration
 
-ipam-controller accepts configuration using command line flags and K8s configMap
+ipam-controller accepts configuration using command line flags and IPPools CRs.
 
 #### Flags
 
@@ -140,10 +174,6 @@ Common flags:
 
 Controller flags:
 
-      --config-name string                                                                                                                                                                     
-                The name of the ConfigMap which holds controller configuration (default "nvidia-k8s-ipam-config")
-      --config-namespace string                                                                                                                                                                
-                The name of the namespace where ConfigMap with controller configuration exist (default "kube-system")
       --health-probe-bind-address string                                                                                                                                                       
                 The address the probe endpoint binds to. (default ":8081")
       --kubeconfig string                                                                                                                                                                      
@@ -154,37 +184,43 @@ Controller flags:
                 Determines the namespace in which the leader election resource will be created. (default "kube-system")
       --metrics-bind-address string                                                                                                                                                            
                 The address the metric endpoint binds to. (default ":8080")
+      --ippools-namespace string
+                The name of the namespace to watch for IPPools CRs. (default "kube-system")
 ```
 
-#### ConfigMap
+#### IPPool CR
 
-ipam-controller accepts IP Pool configuration via configMap with a pre-defined key named `config`
+ipam-controller accepts IP Pools configuration via IPPool CRs.
+Multiple IPPool CRs can be created, with different NodeSelectors.
 
 ```yaml
-apiVersion: v1
-kind: ConfigMap
+apiVersion: nv-ipam.nvidia.com/v1alpha1
+kind: IPPool
 metadata:
-  name: nvidia-k8s-ipam-config
+  name: my-pool
   namespace: kube-system
-data:
-  config: |
-    {
-      "pools": {
-        "my-pool": {"subnet": "192.168.0.0/16", "perNodeBlockSize": 100 , "gateway": "192.168.0.1"}
-      },
-      "nodeSelector": {"kubernetes.io/os": "linux"}
-    }
+spec:
+  subnet: 192.168.0.0/16
+  perNodeBlockSize: 100
+  gateway: 192.168.0.1
+  nodeSelector:
+    nodeSelectorTerms:
+    - matchExpressions:
+        - key: kubernetes.io/role
+          operator: In
+          values:
+            - worker
 ```
 
-* `pools`: contains a set of named IP Pools keyed by name
+* `spec`: contains the IP pool configuration
   * `subnet`: IP Subnet of the pool
   * `gateway`: Gateway IP of the subnet
   * `perNodeBlockSize`: the number of IPs of IP Blocks allocated to Nodes.
-* `nodeSelector`: a map<string, string> of node selector labels, only nodes that match the provided labels will get assigned IP Blocks for the defined pools
+  * `nodeSelector`: A list of node selector terms. The terms are ORed. Each term can have a list of matchExpressions that are ANDed. Only the nodes that match the provided labels will get assigned IP Blocks for the defined pool.
 
 > __Notes:__
 >
-> * pool name is composed of alphanumeric letters separated by dots(`.`) undersocres(`_`) or hyphens(`-`)
+> * pool name is composed of alphanumeric letters separated by dots(`.`) underscores(`_`) or hyphens(`-`)
 > * `perNodeBlockSize` minimum size is 2
 > * `subnet` must be large enough to accommodate at least one `perNodeBlockSize` block of IPs
 
@@ -238,6 +274,8 @@ Node daemon flags:
                 The name of the Node on which the daemon runs
       --store-file string                                                                                                                                                                            
                 Path of the file which used to store allocations (default "/var/lib/cni/nv-ipam/store")
+      --ippools-namespace string
+                The name of the namespace to watch for IPPools CRs. (default "kube-system")
 
 Shim CNI Configuration flags:
 
@@ -296,26 +334,30 @@ interface should have two IP addresses: one IPv4 and one IPv6. (default: network
 > _NOTE:_ This command will deploy latest dev build with default configuration
 
 ```shell
+kubectl apply -f https://raw.githubusercontent.com/Mellanox/nvidia-k8s-ipam/main/deploy/crds/nv-ipam.nvidia.com_ippools.yaml
 kubectl apply -f https://raw.githubusercontent.com/Mellanox/nvidia-k8s-ipam/main/deploy/nv-ipam.yaml
 ```
 
-### Create ipam-controller config
+### Create IPPool CR
 
 ```shell
 cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: ConfigMap
+apiVersion: nv-ipam.nvidia.com/v1alpha1
+kind: IPPool
 metadata:
-  name: nvidia-k8s-ipam-config
+  name: my-pool
   namespace: kube-system
-data:
-  config: |
-    {
-      "pools": {
-        "my-pool": {"subnet": "192.168.0.0/16", "perNodeBlockSize": 100 , "gateway": "192.168.0.1"}
-      },
-      "nodeSelector": {"kubernetes.io/os": "linux"}
-    }
+spec:
+  subnet: 192.168.0.0/16
+  perNodeBlockSize: 100
+  gateway: 192.168.0.1
+  nodeSelector:
+    nodeSelectorTerms:
+    - matchExpressions:
+        - key: kubernetes.io/role
+          operator: In
+          values:
+            - worker
 EOF
 ```
 
@@ -345,7 +387,19 @@ EOF
 View allocated IP Blocks:
 
 ```shell
-kubectl get nodes -o=custom-columns='NAME:metadata.name,ANNOTATION:metadata.annotations.ipam\.nvidia\.com/ip-blocks'
+kubectl get ippools.nv-ipam.nvidia.com -A -o jsonpath='{range .items[*]}{.metadata.name}{"\n"} {range .status.allocations[*]}{"\t"}{.nodeName} => Start IP: {.startIP} End IP: {.endIP}{"\n"}{end}{"\n"}{end}'
+
+pool1
+ 	host-a => Start IP: 192.168.0.1 End IP: 192.168.0.24
+	host-b => Start IP: 192.168.0.25 End IP: 192.168.0.48
+	host-c => Start IP: 192.168.0.49 End IP: 192.168.0.72
+	k8s-master => Start IP: 192.168.0.73 End IP: 192.168.0.96
+
+pool2
+ 	host-a => Start IP: 172.16.0.1 End IP: 172.16.0.50
+	host-b => Start IP: 172.16.0.51 End IP: 172.16.0.100
+	host-c => Start IP: 172.16.0.101 End IP: 172.16.0.150
+	k8s-master => Start IP: 172.16.0.151 End IP: 172.16.0.200
 ```
 
 View network status of pods:
