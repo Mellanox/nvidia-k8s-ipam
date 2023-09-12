@@ -36,12 +36,13 @@ const (
 // New initialize and return new Options object
 func New() *Options {
 	return &Options{
-		Options:     *cmdoptions.New(),
-		MetricsAddr: ":8080",
-		ProbeAddr:   ":8081",
-		NodeName:    "",
-		BindAddress: DefaultBindAddress,
-		StoreFile:   DefaultStoreFile,
+		Options:        *cmdoptions.New(),
+		MetricsAddr:    ":8080",
+		ProbeAddr:      ":8081",
+		NodeName:       "",
+		BindAddress:    DefaultBindAddress,
+		StoreFile:      DefaultStoreFile,
+		PoolsNamespace: "kube-system",
 		// shim CNI parameters
 		CNIBinDir:                   "/opt/cni/bin",
 		CNIBinFile:                  "/nv-ipam",
@@ -58,11 +59,12 @@ func New() *Options {
 // Options holds command line options for controller
 type Options struct {
 	cmdoptions.Options
-	MetricsAddr string
-	ProbeAddr   string
-	NodeName    string
-	BindAddress string
-	StoreFile   string
+	MetricsAddr    string
+	ProbeAddr      string
+	NodeName       string
+	PoolsNamespace string
+	BindAddress    string
+	StoreFile      string
 	// shim CNI parameters
 	CNIBinDir                   string
 	CNIBinFile                  string
@@ -91,6 +93,8 @@ func (o *Options) AddNamedFlagSets(sharedFS *cliflag.NamedFlagSets) {
 		o.ProbeAddr, "The address the probe endpoint binds to.")
 	daemonFS.StringVar(&o.NodeName, "node-name",
 		o.NodeName, "The name of the Node on which the daemon runs")
+	daemonFS.StringVar(&o.PoolsNamespace, "ippools-namespace",
+		o.PoolsNamespace, "The name of the namespace to watch for IPPools CRs")
 	daemonFS.StringVar(&o.BindAddress, "bind-address", o.BindAddress,
 		"GPRC server bind address. e.g.: tcp://127.0.0.1:9092, unix:///var/lib/foo")
 	daemonFS.StringVar(&o.StoreFile, "store-file", o.StoreFile,
@@ -121,6 +125,9 @@ func (o *Options) AddNamedFlagSets(sharedFS *cliflag.NamedFlagSets) {
 func (o *Options) Validate() error {
 	if len(o.NodeName) == 0 {
 		return fmt.Errorf("node-name is required parameter")
+	}
+	if len(o.PoolsNamespace) == 0 {
+		return fmt.Errorf("ippools-namespace is required parameter")
 	}
 	_, _, err := ParseBindAddress(o.BindAddress)
 	if err != nil {

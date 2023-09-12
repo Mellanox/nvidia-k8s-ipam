@@ -11,7 +11,7 @@
  limitations under the License.
 */
 
-package app_test
+package migrator_test
 
 import (
 	"context"
@@ -31,7 +31,7 @@ import (
 
 const (
 	TestNamespace     = "test-ns"
-	TestConfigMapName = "test-config"
+	TestConfigMapName = "nvidia-k8s-ipam-config"
 )
 
 var (
@@ -42,9 +42,9 @@ var (
 	ctx       context.Context
 )
 
-func TestApp(t *testing.T) {
+func TestMigrator(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "IPAM Controller Suite")
+	RunSpecs(t, "IPAM Controller Migrator Suite")
 }
 
 var _ = BeforeSuite(func() {

@@ -20,10 +20,11 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 
+	ipamv1alpha1 "github.com/Mellanox/nvidia-k8s-ipam/api/v1alpha1"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/allocator"
-	"github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
 )
 
 const (
@@ -37,23 +38,23 @@ const (
 	testPerNodeBlockCount2 = 10
 )
 
-func getPool1Config() allocator.AllocationConfig {
-	_, network, _ := net.ParseCIDR("192.168.0.0/24")
-	return allocator.AllocationConfig{
-		PoolName:         testPoolName1,
-		Subnet:           network,
-		Gateway:          net.ParseIP("192.168.0.1"),
-		PerNodeBlockSize: testPerNodeBlockCount1,
+func getPool1() *ipamv1alpha1.IPPool {
+	return &ipamv1alpha1.IPPool{
+		ObjectMeta: v1.ObjectMeta{Name: testPoolName1},
+		Spec: ipamv1alpha1.IPPoolSpec{
+			Subnet:           "192.168.0.0/24",
+			PerNodeBlockSize: testPerNodeBlockCount1,
+			Gateway:          "192.168.0.1"},
 	}
 }
 
-func getPool2Config() allocator.AllocationConfig {
-	_, network, _ := net.ParseCIDR("172.16.0.0/16")
-	return allocator.AllocationConfig{
-		PoolName:         testPoolName2,
-		Subnet:           network,
-		Gateway:          net.ParseIP("172.16.0.1"),
-		PerNodeBlockSize: testPerNodeBlockCount2,
+func getPool2() *ipamv1alpha1.IPPool {
+	return &ipamv1alpha1.IPPool{
+		ObjectMeta: v1.ObjectMeta{Name: testPoolName2},
+		Spec: ipamv1alpha1.IPPoolSpec{
+			Subnet:           "172.16.0.0/16",
+			PerNodeBlockSize: testPerNodeBlockCount2,
+			Gateway:          "172.16.0.1"},
 	}
 }
 
@@ -66,131 +67,185 @@ var _ = Describe("Allocator", func() {
 		ctx = context.Background()
 	})
 
-	It("Allocated/Deallocate without config", func() {
-		a := allocator.New()
-		alloc, err := a.Allocate(ctx, testNodeName1)
-		Expect(alloc).To(BeEmpty())
-		Expect(err).To(BeNil())
-		a.Deallocate(ctx, testNodeName1)
-	})
-
 	It("Allocate/Deallocate", func() {
-		pool1 := getPool1Config()
-		pool2 := getPool2Config()
-		a := allocator.New()
-		a.Configure(ctx, []allocator.AllocationConfig{pool1, pool2})
-		node1Alloc, err := a.Allocate(ctx, testNodeName1)
+		pool1 := getPool1()
+		pool2 := getPool2()
+		pa1 := allocator.CreatePoolAllocatorFromIPPool(ctx, pool1, sets.New[string]())
+		pa2 := allocator.CreatePoolAllocatorFromIPPool(ctx, pool2, sets.New[string]())
+		node1AllocPool1, err := pa1.AllocateFromPool(ctx, testNodeName1)
+		Expect(err).ToNot(HaveOccurred())
+		node1AllocPool2, err := pa2.AllocateFromPool(ctx, testNodeName1)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(node1AllocPool1.StartIP.String()).To(BeEquivalentTo("192.168.0.1"))
+		Expect(node1AllocPool1.EndIP.String()).To(BeEquivalentTo("192.168.0.15"))
+		Expect(node1AllocPool2.StartIP.String()).To(BeEquivalentTo("172.16.0.1"))
+		Expect(node1AllocPool2.EndIP.String()).To(BeEquivalentTo("172.16.0.10"))
+
+		node1AllocSecondCall, err := pa1.AllocateFromPool(ctx, testNodeName1)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(node1Alloc[testPoolName1].StartIP).To(BeEquivalentTo("192.168.0.1"))
-		Expect(node1Alloc[testPoolName1].EndIP).To(BeEquivalentTo("192.168.0.15"))
-		Expect(node1Alloc[testPoolName2].StartIP).To(BeEquivalentTo("172.16.0.1"))
-		Expect(node1Alloc[testPoolName2].EndIP).To(BeEquivalentTo("172.16.0.10"))
+		Expect(node1AllocSecondCall).To(Equal(node1AllocPool1))
 
-		node1AllocSecondCall, err := a.Allocate(ctx, testNodeName1)
+		node1AllocSecondCall, err = pa2.AllocateFromPool(ctx, testNodeName1)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(node1AllocSecondCall).To(Equal(node1Alloc))
+		Expect(node1AllocSecondCall).To(Equal(node1AllocPool2))
 
-		node2Alloc, err := a.Allocate(ctx, testNodeName2)
+		node2AllocPool1, err := pa1.AllocateFromPool(ctx, testNodeName2)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(node2Alloc[testPoolName1].StartIP).To(BeEquivalentTo("192.168.0.16"))
-		Expect(node2Alloc[testPoolName1].EndIP).To(BeEquivalentTo("192.168.0.30"))
-		Expect(node2Alloc[testPoolName2].StartIP).To(BeEquivalentTo("172.16.0.11"))
-		Expect(node2Alloc[testPoolName2].EndIP).To(BeEquivalentTo("172.16.0.20"))
+		node2AllocPool2, err := pa2.AllocateFromPool(ctx, testNodeName2)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(node2AllocPool1.StartIP.String()).To(BeEquivalentTo("192.168.0.16"))
+		Expect(node2AllocPool1.EndIP.String()).To(BeEquivalentTo("192.168.0.30"))
+		Expect(node2AllocPool2.StartIP.String()).To(BeEquivalentTo("172.16.0.11"))
+		Expect(node2AllocPool2.EndIP.String()).To(BeEquivalentTo("172.16.0.20"))
 
-		node3Alloc, err := a.Allocate(ctx, testNodeName3)
-		Expect(node3Alloc[testPoolName1].StartIP).To(BeEquivalentTo("192.168.0.31"))
-		Expect(node3Alloc[testPoolName1].EndIP).To(BeEquivalentTo("192.168.0.45"))
-		Expect(node3Alloc[testPoolName2].StartIP).To(BeEquivalentTo("172.16.0.21"))
-		Expect(node3Alloc[testPoolName2].EndIP).To(BeEquivalentTo("172.16.0.30"))
+		node3AllocPool1, err := pa1.AllocateFromPool(ctx, testNodeName3)
+		Expect(err).NotTo(HaveOccurred())
+		node3AllocPool2, err := pa2.AllocateFromPool(ctx, testNodeName3)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(node3AllocPool1.StartIP.String()).To(BeEquivalentTo("192.168.0.31"))
+		Expect(node3AllocPool1.EndIP.String()).To(BeEquivalentTo("192.168.0.45"))
+		Expect(node3AllocPool2.StartIP.String()).To(BeEquivalentTo("172.16.0.21"))
+		Expect(node3AllocPool2.EndIP.String()).To(BeEquivalentTo("172.16.0.30"))
 
-		node4Alloc, err := a.Allocate(ctx, testNodeName4)
-		Expect(node4Alloc[testPoolName1].StartIP).To(BeEquivalentTo("192.168.0.46"))
-		Expect(node4Alloc[testPoolName1].EndIP).To(BeEquivalentTo("192.168.0.60"))
-		Expect(node4Alloc[testPoolName2].StartIP).To(BeEquivalentTo("172.16.0.31"))
-		Expect(node4Alloc[testPoolName2].EndIP).To(BeEquivalentTo("172.16.0.40"))
+		node4AllocPool1, err := pa1.AllocateFromPool(ctx, testNodeName4)
+		Expect(err).NotTo(HaveOccurred())
+		node4AllocPool2, err := pa2.AllocateFromPool(ctx, testNodeName4)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(node4AllocPool1.StartIP.String()).To(BeEquivalentTo("192.168.0.46"))
+		Expect(node4AllocPool1.EndIP.String()).To(BeEquivalentTo("192.168.0.60"))
+		Expect(node4AllocPool2.StartIP.String()).To(BeEquivalentTo("172.16.0.31"))
+		Expect(node4AllocPool2.EndIP.String()).To(BeEquivalentTo("172.16.0.40"))
 
 		// deallocate for node3 and node1
-		a.Deallocate(ctx, testNodeName1)
-		a.Deallocate(ctx, testNodeName3)
+		pa1.Deallocate(ctx, testNodeName1)
+		pa1.Deallocate(ctx, testNodeName3)
+		pa2.Deallocate(ctx, testNodeName1)
+		pa2.Deallocate(ctx, testNodeName3)
 
 		// allocate again, testNodeName3 should have IPs from index 0, testNodeName3 IPs from index 2
-		node3Alloc, err = a.Allocate(ctx, testNodeName3)
-		Expect(node3Alloc[testPoolName1].StartIP).To(BeEquivalentTo("192.168.0.1"))
-		Expect(node3Alloc[testPoolName1].EndIP).To(BeEquivalentTo("192.168.0.15"))
-		Expect(node3Alloc[testPoolName2].StartIP).To(BeEquivalentTo("172.16.0.1"))
-		Expect(node3Alloc[testPoolName2].EndIP).To(BeEquivalentTo("172.16.0.10"))
+		node3AllocPool1, err = pa1.AllocateFromPool(ctx, testNodeName3)
+		Expect(err).NotTo(HaveOccurred())
+		node3AllocPool2, err = pa2.AllocateFromPool(ctx, testNodeName3)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(node3AllocPool1.StartIP.String()).To(BeEquivalentTo("192.168.0.1"))
+		Expect(node3AllocPool1.EndIP.String()).To(BeEquivalentTo("192.168.0.15"))
+		Expect(node3AllocPool2.StartIP.String()).To(BeEquivalentTo("172.16.0.1"))
+		Expect(node3AllocPool2.EndIP.String()).To(BeEquivalentTo("172.16.0.10"))
 
-		node1Alloc, err = a.Allocate(ctx, testNodeName1)
-		Expect(node1Alloc[testPoolName1].StartIP).To(BeEquivalentTo("192.168.0.31"))
-		Expect(node1Alloc[testPoolName1].EndIP).To(BeEquivalentTo("192.168.0.45"))
-		Expect(node1Alloc[testPoolName2].StartIP).To(BeEquivalentTo("172.16.0.21"))
-		Expect(node1Alloc[testPoolName2].EndIP).To(BeEquivalentTo("172.16.0.30"))
+		node1AllocPool1, err = pa1.AllocateFromPool(ctx, testNodeName1)
+		Expect(err).ToNot(HaveOccurred())
+		node1AllocPool2, err = pa2.AllocateFromPool(ctx, testNodeName1)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(node1AllocPool1.StartIP.String()).To(BeEquivalentTo("192.168.0.31"))
+		Expect(node1AllocPool1.EndIP.String()).To(BeEquivalentTo("192.168.0.45"))
+		Expect(node1AllocPool2.StartIP.String()).To(BeEquivalentTo("172.16.0.21"))
+		Expect(node1AllocPool2.EndIP.String()).To(BeEquivalentTo("172.16.0.30"))
+	})
+
+	It("Deallocate from pool", func() {
+		pool1 := getPool1()
+		a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool1, sets.New[string]())
+		node1AllocPool1, err := a.AllocateFromPool(ctx, testNodeName1)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(node1AllocPool1.StartIP.String()).To(BeEquivalentTo("192.168.0.1"))
+		Expect(node1AllocPool1.EndIP.String()).To(BeEquivalentTo("192.168.0.15"))
+
+		a.Deallocate(ctx, testNodeName1)
+
+		//Allocate to Node2, should get first range
+		node2AllocPool1, err := a.AllocateFromPool(ctx, testNodeName2)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(node2AllocPool1.StartIP.String()).To(BeEquivalentTo("192.168.0.1"))
+		Expect(node2AllocPool1.EndIP.String()).To(BeEquivalentTo("192.168.0.15"))
 	})
 
 	It("No free ranges", func() {
-		pool1 := getPool1Config()
+		pool1 := getPool1()
 		// pool is /24, must fail on the second allocation
-		pool1.PerNodeBlockSize = 200
-		a := allocator.New()
-		a.Configure(ctx, []allocator.AllocationConfig{pool1})
-		node1Alloc, err := a.Allocate(ctx, testNodeName1)
+		pool1.Spec.PerNodeBlockSize = 200
+		a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool1, sets.New[string]())
+		node1Alloc, err := a.AllocateFromPool(ctx, testNodeName1)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(node1Alloc).To(HaveLen(1))
+		Expect(node1Alloc).NotTo(BeNil())
 
-		_, err = a.Allocate(ctx, testNodeName2)
+		_, err = a.AllocateFromPool(ctx, testNodeName2)
 		Expect(errors.Is(err, allocator.ErrNoFreeRanges)).To(BeTrue())
 	})
+
 	It("return NoFreeRanges in case if IP is too large", func() {
-		_, subnet, _ := net.ParseCIDR("255.255.255.0/24")
-		a := allocator.New()
-		a.Configure(ctx, []allocator.AllocationConfig{{
-			PoolName:         "pool",
-			Subnet:           subnet,
-			Gateway:          net.ParseIP("255.255.255.1"),
-			PerNodeBlockSize: 200}})
-		_, err := a.Allocate(ctx, testNodeName1)
+		testPool := &ipamv1alpha1.IPPool{
+			ObjectMeta: v1.ObjectMeta{Name: "pool"},
+			Spec: ipamv1alpha1.IPPoolSpec{
+				Subnet:           "255.255.255.0/24",
+				PerNodeBlockSize: 200,
+				Gateway:          "255.255.255.1"},
+		}
+
+		a := allocator.CreatePoolAllocatorFromIPPool(ctx, testPool, sets.New[string]())
+		_, err := a.AllocateFromPool(ctx, testNodeName1)
 		Expect(err).NotTo(HaveOccurred())
-		_, err = a.Allocate(ctx, testNodeName2)
+		_, err = a.AllocateFromPool(ctx, testNodeName2)
 		Expect(errors.Is(err, allocator.ErrNoFreeRanges)).To(BeTrue())
 	})
 
-	It("Configure - reset allocations", func() {
-		a := allocator.New()
-		origConfig := getPool1Config()
-		a.Configure(ctx, []allocator.AllocationConfig{origConfig})
-		_, err := a.Allocate(ctx, testNodeName1)
-		Expect(err).NotTo(HaveOccurred())
-		node2Alloc, err := a.Allocate(ctx, testNodeName2)
-		Expect(err).NotTo(HaveOccurred())
+	It("Allocate with Pool Status containing not selected Node", func() {
+		pool1 := getPool1()
+		pool1.Status = ipamv1alpha1.IPPoolStatus{
+			Allocations: []ipamv1alpha1.Allocation{
+				{
+					NodeName: "not-in-selector",
+					StartIP:  "192.168.0.1",
+					EndIP:    "192.168.0.15",
+				},
+				{
+					NodeName: testNodeName1,
+					StartIP:  "192.168.0.16",
+					EndIP:    "192.168.0.30",
+				},
+			},
+		}
+		selectedNodes := sets.New[string](testNodeName1)
+		a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool1, selectedNodes)
+		node2AllocPool1, err := a.AllocateFromPool(ctx, testNodeName2)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(node2AllocPool1.StartIP.String()).To(BeEquivalentTo("192.168.0.1"))
+		Expect(node2AllocPool1.EndIP.String()).To(BeEquivalentTo("192.168.0.15"))
+	})
 
-		// update config with same configuration, should not reset allocations
-		a.Configure(ctx, []allocator.AllocationConfig{origConfig})
-		node2AllocSecondCall, err := a.Allocate(ctx, testNodeName2)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(node2AllocSecondCall[testPoolName1].StartIP).To(Equal(node2Alloc[testPoolName1].StartIP))
-
-		// reset config
-		newCfg := origConfig
-		newCfg.Gateway = net.ParseIP("192.168.0.2")
-		a.Configure(ctx, []allocator.AllocationConfig{newCfg})
-		node2AllocThirdCall, err := a.Allocate(ctx, testNodeName2)
-		Expect(err).NotTo(HaveOccurred())
-		// allocation begins from the start of the subnet
-		Expect(node2AllocThirdCall[testPoolName1].StartIP).NotTo(Equal(node2Alloc[testPoolName1].StartIP))
+	It("Allocate with Pool Status containing duplicate StartIP", func() {
+		pool1 := getPool1()
+		pool1.Status = ipamv1alpha1.IPPoolStatus{
+			Allocations: []ipamv1alpha1.Allocation{
+				{
+					NodeName: testNodeName1,
+					StartIP:  "192.168.0.1",
+					EndIP:    "192.168.0.15",
+				},
+				{
+					NodeName: testNodeName2,
+					StartIP:  "192.168.0.1",
+					EndIP:    "192.168.0.15",
+				},
+			},
+		}
+		selectedNodes := sets.New[string](testNodeName1, testNodeName2)
+		a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool1, selectedNodes)
+		node2AllocPool1, err := a.AllocateFromPool(ctx, testNodeName2)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(node2AllocPool1.StartIP.String()).To(BeEquivalentTo("192.168.0.16"))
+		Expect(node2AllocPool1.EndIP.String()).To(BeEquivalentTo("192.168.0.30"))
 	})
 
 	It("ConfigureAndLoadAllocations - Data load test", func() {
-		getValidData := func() *pool.IPPool {
-			return &pool.IPPool{Name: testPoolName1,
-				Subnet:  "192.168.0.0/24",
-				StartIP: "192.168.0.16",
-				EndIP:   "192.168.0.30",
-				Gateway: "192.168.0.1",
+		getValidData := func() *allocator.AllocatedRange {
+			return &allocator.AllocatedRange{
+				StartIP: net.ParseIP("192.168.0.16"),
+				EndIP:   net.ParseIP("192.168.0.30"),
 			}
 		}
 
 		testCases := []struct {
-			in     *pool.IPPool
+			in     *allocator.AllocatedRange
 			loaded bool
 		}{
 			{ // valid data
@@ -198,141 +253,98 @@ var _ = Describe("Allocator", func() {
 				loaded: true,
 			},
 			{ // different subnet, should ignore
-				in: &pool.IPPool{Name: testPoolName1,
-					Subnet:  "1.1.1.0/24",
-					StartIP: "1.1.1.1",
-					EndIP:   "1.1.1.2",
-					Gateway: "1.1.1.1",
+				in: &allocator.AllocatedRange{
+					StartIP: net.ParseIP("1.1.1.1"),
+					EndIP:   net.ParseIP("1.1.1.2"),
 				},
 				loaded: false,
 			},
-			{ // no subnet, should ignore
-				in: func() *pool.IPPool {
-					d := getValidData()
-					d.Subnet = ""
-					return d
-				}(),
-				loaded: false,
-			},
-			{ // no gw, should ignore
-				in: func() *pool.IPPool {
-					d := getValidData()
-					d.Gateway = ""
-					return d
-				}(),
-				loaded: false,
-			},
 			{ // no startIP, should ignore
-				in: func() *pool.IPPool {
+				in: func() *allocator.AllocatedRange {
 					d := getValidData()
-					d.StartIP = ""
+					d.StartIP = nil
 					return d
 				}(),
 				loaded: false,
 			},
 			{ // no endIP, should ignore
-				in: func() *pool.IPPool {
+				in: func() *allocator.AllocatedRange {
 					d := getValidData()
-					d.EndIP = ""
+					d.EndIP = net.IPv4allrouter
 					return d
 				}(),
 				loaded: false,
 			},
 			{ // start and end IPs are the same, should ignore
-				in: func() *pool.IPPool {
+				in: func() *allocator.AllocatedRange {
 					d := getValidData()
-					d.StartIP = "192.168.0.1"
-					d.EndIP = "192.168.0.1"
+					d.StartIP = net.ParseIP("192.168.0.1")
+					d.EndIP = net.ParseIP("192.168.0.1")
 					return d
 				}(),
 				loaded: false,
 			},
 			{ // IPs out of subnet, should ignore
-				in: func() *pool.IPPool {
+				in: func() *allocator.AllocatedRange {
 					d := getValidData()
-					d.StartIP = "192.168.1.1"
-					d.EndIP = "192.168.1.15"
+					d.StartIP = net.ParseIP("192.168.1.1")
+					d.EndIP = net.ParseIP("192.168.1.15")
 					return d
 				}(),
 				loaded: false,
 			},
 			{ // duplicate range, should ignore
-				in: func() *pool.IPPool {
+				in: func() *allocator.AllocatedRange {
 					d := getValidData()
-					d.StartIP = "192.168.0.1"
-					d.EndIP = "192.168.0.15"
+					d.StartIP = net.ParseIP("192.168.0.1")
+					d.EndIP = net.ParseIP("192.168.0.15")
 					return d
 				}(),
 				loaded: false,
 			},
 			{ // ip invalid offset, should ignore
-				in: func() *pool.IPPool {
+				in: func() *allocator.AllocatedRange {
 					d := getValidData()
-					d.StartIP = "192.168.0.17"
-					d.EndIP = "192.168.0.31"
+					d.StartIP = net.ParseIP("192.168.0.17")
+					d.EndIP = net.ParseIP("192.168.0.31")
 					return d
 				}(),
 				loaded: false,
 			},
 			{ // bad IP count, should ignore
-				in: func() *pool.IPPool {
+				in: func() *allocator.AllocatedRange {
 					d := getValidData()
-					d.StartIP = "192.168.0.16"
-					d.EndIP = "192.168.0.25"
-					return d
-				}(),
-				loaded: false,
-			},
-			{ // different GW, should ignore
-				in: func() *pool.IPPool {
-					d := getValidData()
-					d.Gateway = "192.168.0.2"
-					return d
-				}(),
-				loaded: false,
-			},
-			{ // wrong GW, should ignore
-				in: func() *pool.IPPool {
-					d := getValidData()
-					d.Gateway = "192.168.100.1"
+					d.StartIP = net.ParseIP("192.168.0.16")
+					d.EndIP = net.ParseIP("192.168.0.25")
 					return d
 				}(),
 				loaded: false,
 			},
 		}
 		for _, test := range testCases {
-			a := allocator.New()
-			Expect(a.IsConfigured()).To(BeFalse())
+			pool1 := getPool1()
+			pool1.Status = ipamv1alpha1.IPPoolStatus{
+				Allocations: []ipamv1alpha1.Allocation{
+					{
+						NodeName: testNodeName1,
+						StartIP:  "192.168.0.1",
+						EndIP:    "192.168.0.15",
+					},
+					{
+						NodeName: testNodeName2,
+						StartIP:  test.in.StartIP.String(),
+						EndIP:    test.in.EndIP.String(),
+					},
+				}}
+			nodes := sets.New[string](testNodeName1, testNodeName2)
+			pa1 := allocator.CreatePoolAllocatorFromIPPool(ctx, pool1, nodes)
 
-			pool1 := getPool1Config()
-
-			defNode := corev1.Node{}
-			defNode.SetName(testPoolName1)
-			defNodeAlloc := map[string]*pool.IPPool{
-				testPoolName1: {Name: testPoolName1,
-					Subnet:  "192.168.0.0/24",
-					StartIP: "192.168.0.1",
-					EndIP:   "192.168.0.15",
-					Gateway: "192.168.0.1",
-				},
-			}
-			Expect(pool.SetIPBlockAnnotation(&defNode, defNodeAlloc)).NotTo(HaveOccurred())
-
-			testNodeAlloc := map[string]*pool.IPPool{
-				testPoolName1: test.in,
-			}
-			testNode := corev1.Node{}
-			testNode.SetName(testNodeName2)
-			Expect(pool.SetIPBlockAnnotation(&testNode, testNodeAlloc)).NotTo(HaveOccurred())
-
-			a.ConfigureAndLoadAllocations(ctx, []allocator.AllocationConfig{pool1}, []corev1.Node{defNode, {}, testNode})
-			Expect(a.IsConfigured()).To(BeTrue())
-			node1AllocFromAllocator, err := a.Allocate(ctx, testNodeName2)
+			node1AllocFromAllocator, err := pa1.AllocateFromPool(ctx, testNodeName2)
 			Expect(err).NotTo(HaveOccurred())
 			if test.loaded {
-				Expect(node1AllocFromAllocator).To(Equal(testNodeAlloc))
+				Expect(node1AllocFromAllocator).To(BeEquivalentTo(test.in))
 			} else {
-				Expect(node1AllocFromAllocator).NotTo(Equal(testNodeAlloc))
+				Expect(node1AllocFromAllocator).NotTo(BeEquivalentTo(test.in))
 			}
 		}
 	})

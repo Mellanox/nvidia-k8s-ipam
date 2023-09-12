@@ -16,58 +16,63 @@ package controllers
 import (
 	"context"
 
-	corev1 "k8s.io/api/core/v1"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
+	ipamv1alpha1 "github.com/Mellanox/nvidia-k8s-ipam/api/v1alpha1"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
 )
 
-// NodeReconciler reconciles Node objects
-type NodeReconciler struct {
+// IPPoolReconciler reconciles IPPool objects
+type IPPoolReconciler struct {
 	PoolManager pool.Manager
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	NodeName string
 }
 
-// Reconcile contains logic to sync Node objects
-func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+// Reconcile contains logic to sync IPPool objects
+func (r *IPPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	reqLog := log.FromContext(ctx)
-	node := &corev1.Node{}
-	err := r.Client.Get(ctx, req.NamespacedName, node)
+	ipPool := &ipamv1alpha1.IPPool{}
+	err := r.Client.Get(ctx, req.NamespacedName, ipPool)
 	if err != nil {
 		if apiErrors.IsNotFound(err) {
+			reqLog.Info("IPPool not found, removing from PoolManager")
+			r.PoolManager.RemovePool(req.Name)
 			return ctrl.Result{}, nil
 		}
+		reqLog.Error(err, "failed to get IPPool object from the cache")
 		return ctrl.Result{}, err
 	}
-	if err := r.PoolManager.Update(node); err != nil {
-		reqLog.Info("pool config from the node object is not updated, reset pool config",
-			"reason", err.Error())
-		r.PoolManager.Reset()
-	} else {
-		reqLog.Info("pools configuration updated", "data", r.PoolManager.GetPools())
+	reqLog.Info("Notification on IPPool", "name", ipPool.Name)
+	found := false
+	for _, alloc := range ipPool.Status.Allocations {
+		if alloc.NodeName == r.NodeName {
+			ipPool := &pool.IPPool{
+				Name:    ipPool.Name,
+				Subnet:  ipPool.Spec.Subnet,
+				Gateway: ipPool.Spec.Gateway,
+				StartIP: alloc.StartIP,
+				EndIP:   alloc.EndIP,
+			}
+			r.PoolManager.UpdatePool(ipPool)
+			found = true
+			break
+		}
+	}
+	if !found {
+		r.PoolManager.RemovePool(req.Name)
 	}
 	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *NodeReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *IPPoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&corev1.Node{}).
-		WithEventFilter(predicate.Funcs{
-			UpdateFunc: func(e event.UpdateEvent) bool {
-				if e.ObjectOld == nil || e.ObjectNew == nil {
-					return true
-				}
-				return e.ObjectOld.GetAnnotations()[pool.IPBlocksAnnotation] !=
-					e.ObjectNew.GetAnnotations()[pool.IPBlocksAnnotation]
-			},
-		}).
+		For(&ipamv1alpha1.IPPool{}).
 		Complete(r)
 }

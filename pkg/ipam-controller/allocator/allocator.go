@@ -15,78 +15,60 @@ package allocator
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"net"
 	"reflect"
 	"sort"
-	"sync"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ip"
-	"github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
+
+	ipamv1alpha1 "github.com/Mellanox/nvidia-k8s-ipam/api/v1alpha1"
 )
 
 var ErrNoFreeRanges = errors.New("no free IP ranges available")
 
-// contains allocation information for the node
-type nodeAllocationInfo struct {
-	Node    string
-	Subnet  *net.IPNet
-	Gateway net.IP
-	allocatedRange
-}
-
-// allocatedRange contains range of IPs allocated for the node
-type allocatedRange struct {
+// AllocatedRange contains range of IPs allocated for the node
+type AllocatedRange struct {
 	StartIP net.IP
 	EndIP   net.IP
 }
 
-func newPoolAllocator(cfg AllocationConfig) *poolAllocator {
-	return &poolAllocator{
+func newPoolAllocator(cfg AllocationConfig) *PoolAllocator {
+	return &PoolAllocator{
 		cfg:         cfg,
-		allocations: map[string]allocatedRange{}}
+		allocations: map[string]AllocatedRange{},
+		startIps:    sets.New[string]()}
 }
 
-// poolAllocator contains pool settings and related allocations
-type poolAllocator struct {
+// PoolAllocator contains pool settings and related allocations
+type PoolAllocator struct {
 	cfg AllocationConfig
 	// allocations for nodes, key is the node name, value is allocated range
-	allocations map[string]allocatedRange
+	allocations map[string]AllocatedRange
+	// startIps map, key is StartIp as string. It is used to find overlaps
+	startIps sets.Set[string]
 }
 
-func (pa *poolAllocator) getLog(ctx context.Context, cfg AllocationConfig) logr.Logger {
+func (pa *PoolAllocator) getLog(ctx context.Context, cfg AllocationConfig) logr.Logger {
 	return logr.FromContextOrDiscard(ctx).WithName(fmt.Sprintf("allocator/pool=%s", cfg.PoolName))
 }
 
-// Configure update configuration for pool allocator, resets allocations if required
-func (pa *poolAllocator) Configure(ctx context.Context, cfg AllocationConfig) {
-	log := pa.getLog(ctx, cfg)
-	log.V(1).Info("pool configuration update")
-	if pa.cfg.Equal(&cfg) {
-		log.V(1).Info("pool configuration is the same, keep allocations")
-		return
-	}
-	pa.cfg = cfg
-	pa.allocations = map[string]allocatedRange{}
-	log.Info("pool configuration updated, reset allocations")
-}
-
-// Allocate allocates a new range in the poolAllocator or
+// AllocateFromPool allocates a new range in the poolAllocator or
 // return existing one,
 // returns ErrNoFreeRanges if no free ranges available
-func (pa *poolAllocator) Allocate(ctx context.Context, node string) (nodeAllocationInfo, error) {
+func (pa *PoolAllocator) AllocateFromPool(ctx context.Context, node string) (*AllocatedRange, error) {
 	log := pa.getLog(ctx, pa.cfg).WithValues("node", node)
 	existingAlloc, exist := pa.allocations[node]
 	if exist {
 		log.V(1).Info("allocation for the node already exist",
 			"start", existingAlloc.StartIP, "end", existingAlloc.EndIP)
-		return pa.getNodeAllocationInfo(node, existingAlloc), nil
+		return &existingAlloc, nil
 	}
 	allocations := pa.getAllocationsAsSlice()
 	var startIP net.IP
@@ -115,76 +97,79 @@ func (pa *poolAllocator) Allocate(ctx context.Context, node string) (nodeAllocat
 		ip.IsBroadcast(endIP, pa.cfg.Subnet) {
 		// out of range
 		log.Info("can't allocate: pool has no free ranges")
-		return nodeAllocationInfo{}, ErrNoFreeRanges
+		return &AllocatedRange{}, ErrNoFreeRanges
 	}
 
 	log.Info("range allocated",
 		"start", startIP, "end", endIP)
-	pa.allocations[node] = allocatedRange{
+	a := AllocatedRange{
 		StartIP: startIP,
 		EndIP:   endIP,
 	}
-	return pa.getNodeAllocationInfo(node, pa.allocations[node]), nil
+	pa.allocations[node] = a
+	pa.startIps.Insert(startIP.String())
+	return &a, nil
 }
 
 // Deallocate remove info about allocation for the node from the poolAllocator
-func (pa *poolAllocator) Deallocate(ctx context.Context, node string) {
+func (pa *PoolAllocator) Deallocate(ctx context.Context, node string) {
 	log := pa.getLog(ctx, pa.cfg)
 	log.Info("deallocate range for node", "node", node)
-	delete(pa.allocations, node)
+	a, ok := pa.allocations[node]
+	if ok {
+		pa.startIps.Delete(a.StartIP.String())
+		delete(pa.allocations, node)
+	}
 }
 
-// Load loads range to the pool allocator with validation for conflicts
-func (pa *poolAllocator) Load(ctx context.Context, allocData nodeAllocationInfo) error {
-	log := pa.getLog(ctx, pa.cfg).WithValues("node", allocData.Node)
-	if err := pa.checkAllocation(allocData); err != nil {
+// load loads range to the pool allocator with validation for conflicts
+func (pa *PoolAllocator) load(ctx context.Context, nodeName string, allocRange AllocatedRange) error {
+	log := pa.getLog(ctx, pa.cfg).WithValues("node", nodeName)
+	if err := pa.checkAllocation(allocRange); err != nil {
 		log.Info("range check failed", "reason", err.Error())
 		return err
 	}
-	allocations := pa.getAllocationsAsSlice()
-	for _, a := range allocations {
-		// range size is always the same, then an overlap means the blocks are necessarily equal.
-		// it's enough to just compare StartIP which can technically act as an absolute "block index" in the subnet
-		if allocData.allocatedRange.StartIP.Equal(a.StartIP) {
-			err := fmt.Errorf("range overlaps with: %v", a)
-			log.Info("skip loading range", "reason", err.Error())
-			return err
-		}
+	// range size is always the same, then an overlap means the blocks are necessarily equal.
+	// it's enough to just check StartIP which can technically act as an absolute "block index" in the subnet
+	if pa.startIps.Has(allocRange.StartIP.String()) {
+		err := fmt.Errorf("range overlaps")
+		log.Info("skip loading range", "reason", err.Error())
+		return err
 	}
-	log.Info("data loaded", "startIP", allocData.StartIP, "endIP", allocData.EndIP)
-	pa.allocations[allocData.Node] = allocData.allocatedRange
+
+	log.Info("data loaded", "startIP", allocRange.StartIP, "endIP", allocRange.EndIP)
+	pa.allocations[nodeName] = allocRange
+	pa.startIps.Insert(allocRange.StartIP.String())
 	return nil
 }
 
-func (pa *poolAllocator) checkAllocation(allocData nodeAllocationInfo) error {
-	if allocData.Subnet.String() != pa.cfg.Subnet.String() {
-		return fmt.Errorf("subnet mismatch")
+func (pa *PoolAllocator) checkAllocation(allocRange AllocatedRange) error {
+	if !pa.cfg.Subnet.Contains(allocRange.StartIP) || !pa.cfg.Subnet.Contains(allocRange.EndIP) {
+		return fmt.Errorf("invalid allocation allocators: start or end IP is out of the subnet")
 	}
-	if !allocData.Gateway.Equal(pa.cfg.Gateway) {
-		return fmt.Errorf("gateway mismatch")
+
+	if ip.Cmp(allocRange.EndIP, allocRange.StartIP) <= 0 {
+		return fmt.Errorf("invalid allocation allocators: start IP must be less then end IP")
 	}
+
 	// check that StartIP of the range has valid offset.
 	// all ranges have same size, so we can simply check that (StartIP offset - 1) % pa.cfg.PerNodeBlockSize == 0
 	// -1 required because we skip network addressee (e.g. in 192.168.0.0/24, first allocation will be 192.168.0.1)
-	distanceFromNetworkStart := ip.Distance(pa.cfg.Subnet.IP, allocData.StartIP)
+	distanceFromNetworkStart := ip.Distance(pa.cfg.Subnet.IP, allocRange.StartIP)
 	if distanceFromNetworkStart < 1 ||
 		math.Mod(float64(distanceFromNetworkStart)-1, float64(pa.cfg.PerNodeBlockSize)) != 0 {
 		return fmt.Errorf("invalid start IP offset")
 	}
-	if ip.Distance(allocData.StartIP, allocData.EndIP) != int64(pa.cfg.PerNodeBlockSize)-1 {
+	if ip.Distance(allocRange.StartIP, allocRange.EndIP) != int64(pa.cfg.PerNodeBlockSize)-1 {
 		return fmt.Errorf("ip count mismatch")
 	}
 	return nil
 }
 
-func (pa *poolAllocator) getNodeAllocationInfo(node string, allocRange allocatedRange) nodeAllocationInfo {
-	return nodeAllocationInfo{allocatedRange: allocRange, Subnet: pa.cfg.Subnet, Gateway: pa.cfg.Gateway, Node: node}
-}
-
 // return slice with allocated ranges.
 // ranges are not overlap and are sorted, but there can be "holes" between ranges
-func (pa *poolAllocator) getAllocationsAsSlice() []allocatedRange {
-	allocatedRanges := make([]allocatedRange, 0, len(pa.allocations))
+func (pa *PoolAllocator) getAllocationsAsSlice() []AllocatedRange {
+	allocatedRanges := make([]AllocatedRange, 0, len(pa.allocations))
 	for _, a := range pa.allocations {
 		allocatedRanges = append(allocatedRanges, a)
 	}
@@ -200,186 +185,56 @@ type AllocationConfig struct {
 	Subnet           *net.IPNet
 	Gateway          net.IP
 	PerNodeBlockSize int
+	NodeSelector     *corev1.NodeSelector
 }
 
 func (pc *AllocationConfig) Equal(other *AllocationConfig) bool {
 	return reflect.DeepEqual(pc, other)
 }
 
-// New create and initialize new allocator
-func New() *Allocator {
-	return &Allocator{allocators: map[string]*poolAllocator{}}
-}
-
-type Allocator struct {
-	lock       sync.Mutex
-	allocators map[string]*poolAllocator
-	configured bool
-}
-
-// IsConfigured returns true if allocator is configured
-func (a *Allocator) IsConfigured() bool {
-	a.lock.Lock()
-	defer a.lock.Unlock()
-	return a.configured
-}
-
-// Configure update allocator configuration
-func (a *Allocator) Configure(ctx context.Context, configs []AllocationConfig) {
-	a.lock.Lock()
-	defer a.lock.Unlock()
-	a.configure(ctx, configs)
-}
-
-// ConfigureAndLoadAllocations configures allocator and load data from the node objects
-func (a *Allocator) ConfigureAndLoadAllocations(ctx context.Context, configs []AllocationConfig, nodes []corev1.Node) {
+// CreatePoolAllocatorFromIPPool creates a PoolAllocator and load data from the IPPool CR
+// the nodes Set contains the nodes that match the current NodeSelector of the IPPool
+// it is used to filter out Allocations that are not relevant anymore
+func CreatePoolAllocatorFromIPPool(ctx context.Context,
+	p *ipamv1alpha1.IPPool, nodes sets.Set[string]) *PoolAllocator {
 	log := logr.FromContextOrDiscard(ctx)
-	a.lock.Lock()
-	defer a.lock.Unlock()
-	a.configure(ctx, configs)
-	for i := range nodes {
-		node := nodes[i]
-		nodeLog := log.WithValues("node", node.Name)
-		poolCfg, err := pool.NewConfigReader(&node)
-		if err != nil {
-			nodeLog.Info("skip loading data from the node", "reason", err.Error())
+	_, subnet, _ := net.ParseCIDR(p.Spec.Subnet)
+	gateway := net.ParseIP(p.Spec.Gateway)
+	allocatorConfig := AllocationConfig{
+		PoolName:         p.Name,
+		Subnet:           subnet,
+		Gateway:          gateway,
+		PerNodeBlockSize: p.Spec.PerNodeBlockSize,
+		NodeSelector:     p.Spec.NodeSelector,
+	}
+	pa := newPoolAllocator(allocatorConfig)
+	for i := range p.Status.Allocations {
+		alloc := p.Status.Allocations[i]
+		if !nodes.Has(alloc.NodeName) {
 			continue
 		}
-		// load allocators only for know pools (pools which are defined in the config)
-		for poolName, poolData := range a.allocators {
-			nodeIPPoolConfig := poolCfg.GetPoolByName(poolName)
-			allocInfo, err := ipPoolConfigToNodeAllocationInfo(node.Name, nodeIPPoolConfig)
-			logErr := func(err error) {
-				nodeLog.Info("ignore allocation info from node",
-					"pool", poolName, "reason", err.Error())
-			}
-			if err != nil {
-				logErr(err)
-				continue
-			}
-
-			if err := poolData.Load(ctx, allocInfo); err != nil {
-				logErr(err)
-				continue
-			}
-			a.allocators[poolName] = poolData
+		var err error
+		nodeAllocStart := net.ParseIP(alloc.StartIP)
+		if nodeAllocStart == nil {
+			err = fmt.Errorf("startIP is incorrect ip")
 		}
-	}
-	a.configured = true
-}
-
-// Allocate allocates ranges for node from all pools
-func (a *Allocator) Allocate(ctx context.Context, nodeName string) (map[string]*pool.IPPool, error) {
-	log := logr.FromContextOrDiscard(ctx).WithValues("node", nodeName)
-	a.lock.Lock()
-	defer a.lock.Unlock()
-
-	nodeAllocations := make(map[string]*pool.IPPool, len(a.allocators))
-	for poolName, allocator := range a.allocators {
-		allocation, err := allocator.Allocate(ctx, nodeName)
+		nodeAllocEnd := net.ParseIP(alloc.EndIP)
+		if nodeAllocEnd == nil {
+			err = fmt.Errorf("endIP is incorrect ip")
+		}
+		logInfo := func(err error) {
+			log.Info("ignore allocation info from node", "node", alloc.NodeName,
+				"pool", p.Name, "reason", err.Error())
+		}
 		if err != nil {
-			a.deallocate(ctx, nodeName)
-			return nil, err
+			logInfo(err)
+			continue
 		}
-		nodeAllocations[poolName] = nodeAllocationInfoToIPPoolConfig(poolName, allocation)
-	}
-
-	if log.V(1).Enabled() {
-		//nolint:errchkjson
-		dump, _ := json.Marshal(nodeAllocations)
-		log.V(1).Info("allocated ranges", "ranges", dump)
-	}
-	return nodeAllocations, nil
-}
-
-func (a *Allocator) deallocate(ctx context.Context, nodeName string) {
-	for _, allocator := range a.allocators {
-		allocator.Deallocate(ctx, nodeName)
-	}
-}
-
-// Deallocate release all ranges allocated for node
-func (a *Allocator) Deallocate(ctx context.Context, nodeName string) {
-	a.lock.Lock()
-	defer a.lock.Unlock()
-	a.deallocate(ctx, nodeName)
-}
-
-func (a *Allocator) configure(ctx context.Context, configs []AllocationConfig) {
-	log := logr.FromContextOrDiscard(ctx)
-	for _, cfg := range configs {
-		poolLog := log.WithValues("pool", cfg.PoolName,
-			"gateway", cfg.Gateway.String(), "subnet", cfg.Subnet.String(), "perNodeBlockSize", cfg.PerNodeBlockSize)
-		pAlloc, exist := a.allocators[cfg.PoolName]
-		if exist {
-			poolLog.Info("update IP pool allocator config")
-			pAlloc.Configure(ctx, cfg)
-		} else {
-			poolLog.Info("initialize IP pool allocator")
-			a.allocators[cfg.PoolName] = newPoolAllocator(cfg)
+		allocRange := AllocatedRange{StartIP: nodeAllocStart, EndIP: nodeAllocEnd}
+		if err := pa.load(ctx, alloc.NodeName, allocRange); err != nil {
+			logInfo(err)
+			continue
 		}
 	}
-	// remove outdated pools from controller state
-	for poolName := range a.allocators {
-		found := false
-		for _, cfg := range configs {
-			if poolName == cfg.PoolName {
-				found = true
-				break
-			}
-		}
-		if !found {
-			delete(a.allocators, poolName)
-		}
-	}
-}
-
-func nodeAllocationInfoToIPPoolConfig(poolName string, alloc nodeAllocationInfo) *pool.IPPool {
-	return &pool.IPPool{
-		Name:    poolName,
-		Subnet:  alloc.Subnet.String(),
-		StartIP: alloc.StartIP.String(),
-		EndIP:   alloc.EndIP.String(),
-		Gateway: alloc.Gateway.String(),
-	}
-}
-
-func ipPoolConfigToNodeAllocationInfo(node string, alloc *pool.IPPool) (nodeAllocationInfo, error) {
-	if alloc == nil {
-		return nodeAllocationInfo{}, fmt.Errorf("node allocation is nil")
-	}
-	_, subnet, err := net.ParseCIDR(alloc.Subnet)
-	if subnet == nil || err != nil {
-		return nodeAllocationInfo{}, fmt.Errorf("subnet is incorrect network")
-	}
-	gateway := net.ParseIP(alloc.Gateway)
-	if gateway == nil {
-		return nodeAllocationInfo{}, fmt.Errorf("gateway is incorrect ip")
-	}
-	nodeAllocStart := net.ParseIP(alloc.StartIP)
-	if nodeAllocStart == nil {
-		return nodeAllocationInfo{}, fmt.Errorf("startIP is incorrect ip")
-	}
-	nodeAllocEnd := net.ParseIP(alloc.EndIP)
-	if nodeAllocEnd == nil {
-		return nodeAllocationInfo{}, fmt.Errorf("endIP is incorrect ip")
-	}
-
-	if !subnet.Contains(gateway) {
-		return nodeAllocationInfo{}, fmt.Errorf("gateway is outside of the subnet")
-	}
-
-	if !subnet.Contains(nodeAllocStart) || !subnet.Contains(nodeAllocEnd) {
-		return nodeAllocationInfo{}, fmt.Errorf("invalid allocation allocators: start or end IP is out of the subnet")
-	}
-
-	if ip.Cmp(nodeAllocEnd, nodeAllocStart) <= 0 {
-		return nodeAllocationInfo{}, fmt.Errorf("invalid allocation allocators: start IP must be less then end IP")
-	}
-	return nodeAllocationInfo{
-		Node:           node,
-		Subnet:         subnet,
-		Gateway:        gateway,
-		allocatedRange: allocatedRange{StartIP: nodeAllocStart, EndIP: nodeAllocEnd},
-	}, nil
+	return pa
 }

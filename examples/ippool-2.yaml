@@ -1,0 +1,16 @@
+apiVersion: nv-ipam.nvidia.com/v1alpha1
+kind: IPPool
+metadata:
+  name: pool2
+  namespace: kube-system
+spec:
+  subnet: 172.16.0.0/16
+  perNodeBlockSize: 128
+  gateway: 172.16.0.1
+  nodeSelector:
+    nodeSelectorTerms:
+    - matchExpressions:
+        - key: kubernetes.io/role
+          operator: In
+          values:
+            - worker

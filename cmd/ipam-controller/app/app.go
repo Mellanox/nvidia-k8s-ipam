@@ -18,11 +18,10 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -30,7 +29,7 @@ import (
 	"k8s.io/component-base/term"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
@@ -40,12 +39,12 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	ipamv1alpha1 "github.com/Mellanox/nvidia-k8s-ipam/api/v1alpha1"
 	"github.com/Mellanox/nvidia-k8s-ipam/cmd/ipam-controller/app/options"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
-	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/allocator"
-	configmapctrl "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/controllers/configmap"
+	poolctrl "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/controllers/ippool"
 	nodectrl "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/controllers/node"
-	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/selector"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/migrator"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/version"
 )
 
@@ -98,8 +97,7 @@ func RunController(ctx context.Context, config *rest.Config, opts *options.Optio
 	ctrl.SetLogger(logger)
 
 	logger.Info("start IPAM controller",
-		"version", version.GetVersionString(), "config", opts.ConfigMapName,
-		"configNamespace", opts.ConfigMapNamespace)
+		"version", version.GetVersionString(), "poolsNamespace", opts.IPPoolsNamespace)
 
 	scheme := runtime.NewScheme()
 
@@ -108,15 +106,14 @@ func RunController(ctx context.Context, config *rest.Config, opts *options.Optio
 		return err
 	}
 
+	if err := ipamv1alpha1.AddToScheme(scheme); err != nil {
+		logger.Error(err, "failed to register ipamv1alpha1 scheme")
+		return err
+	}
+
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
-		Scheme: scheme,
-		NewCache: cache.BuilderWithOptions(cache.Options{
-			SelectorsByObject: cache.SelectorsByObject{&corev1.ConfigMap{}: cache.ObjectSelector{
-				Field: fields.AndSelectors(
-					fields.ParseSelectorOrDie(fmt.Sprintf("metadata.name=%s", opts.ConfigMapName)),
-					fields.ParseSelectorOrDie(fmt.Sprintf("metadata.namespace=%s", opts.ConfigMapNamespace))),
-			}},
-		}),
+		Scheme:                        scheme,
+		Namespace:                     opts.IPPoolsNamespace,
 		MetricsBindAddress:            opts.MetricsAddr,
 		Port:                          9443,
 		HealthProbeBindAddress:        opts.ProbeAddr,
@@ -131,31 +128,38 @@ func RunController(ctx context.Context, config *rest.Config, opts *options.Optio
 		return err
 	}
 
-	netAllocator := allocator.New()
-	nodeSelector := selector.New()
-	configEventCH := make(chan event.GenericEvent, 1)
+	k8sClient, err := client.New(config,
+		client.Options{Scheme: mgr.GetScheme(), Mapper: mgr.GetRESTMapper()})
+	if err != nil {
+		logger.Error(err, "failed to create k8sClient client")
+		os.Exit(1)
+	}
+
+	if err := migrator.Migrate(ctx, k8sClient, opts.IPPoolsNamespace); err != nil {
+		logger.Error(err, fmt.Sprintf("failed to migrate NV-IPAM config from ConfigMap, "+
+			"set %s env variable to disable migration", migrator.EnvDisableMigration))
+		return err
+	}
+
+	nodeEventCH := make(chan event.GenericEvent, 1)
 
 	if err = (&nodectrl.NodeReconciler{
-		Allocator:     netAllocator,
-		Selector:      nodeSelector,
-		ConfigEventCh: configEventCH,
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
+		NodeEventCh:    nodeEventCH,
+		PoolsNamespace: opts.IPPoolsNamespace,
+		Client:         mgr.GetClient(),
+		Scheme:         mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		logger.Error(err, "unable to create controller", "controller", "Node")
 		return err
 	}
 
-	if err = (&configmapctrl.ConfigMapReconciler{
-		Allocator:          netAllocator,
-		Selector:           nodeSelector,
-		ConfigEventCh:      configEventCH,
-		ConfigMapName:      opts.ConfigMapName,
-		ConfigMapNamespace: opts.ConfigMapNamespace,
-		Client:             mgr.GetClient(),
-		Scheme:             mgr.GetScheme(),
+	if err = (&poolctrl.IPPoolReconciler{
+		NodeEventCh:    nodeEventCH,
+		PoolsNamespace: opts.IPPoolsNamespace,
+		Client:         mgr.GetClient(),
+		Scheme:         mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		logger.Error(err, "unable to create controller", "controller", "ConfigMap")
+		logger.Error(err, "unable to create controller", "controller", "IPPool")
 		return err
 	}
 

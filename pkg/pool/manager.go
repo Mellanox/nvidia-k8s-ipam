@@ -13,70 +13,53 @@
 
 package pool
 
-import (
-	"fmt"
-	"sync"
-
-	corev1 "k8s.io/api/core/v1"
-)
+import "sync"
 
 // Manager provide access to pools configuration
 //
 //go:generate mockery --name Manager
 type Manager interface {
 	ConfigReader
-	// Update Pool's configs from node object,
-	// returns an error if node object doesn't contain valid config
-	Update(node *corev1.Node) error
-	// Reset clean Pool config which is cached in memory
-	Reset()
+	// Update Pool's config from IPPool CR
+	UpdatePool(pool *IPPool)
+	// Remove Pool's config
+	RemovePool(poolName string)
 }
 
 // NewManager create and initialize new manager instance
 func NewManager() Manager {
-	return &manager{}
+	return &manager{
+		poolByName: make(map[string]*IPPool),
+	}
 }
 
 type manager struct {
-	lock   sync.Mutex
-	reader ConfigReader
+	lock       sync.Mutex
+	poolByName map[string]*IPPool
+}
+
+func (m *manager) UpdatePool(pool *IPPool) {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	m.poolByName[pool.Name] = pool
+}
+
+func (m *manager) RemovePool(poolName string) {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	delete(m.poolByName, poolName)
 }
 
 // GetPoolByName is the Manager interface implementation for the manager
 func (m *manager) GetPoolByName(name string) *IPPool {
 	m.lock.Lock()
 	defer m.lock.Unlock()
-	if m.reader == nil {
-		return nil
-	}
-	return m.reader.GetPoolByName(name)
+	return m.poolByName[name]
 }
 
 // GetPools is the Manager interface implementation for the manager
 func (m *manager) GetPools() map[string]*IPPool {
 	m.lock.Lock()
 	defer m.lock.Unlock()
-	if m.reader == nil {
-		return nil
-	}
-	return m.reader.GetPools()
-}
-
-// Update is the Manager interface implementation for the manager
-func (m *manager) Update(node *corev1.Node) error {
-	m.lock.Lock()
-	defer m.lock.Unlock()
-	r, err := NewConfigReader(node)
-	if err != nil {
-		return fmt.Errorf("failed to update pools configuration from the node object: %v", err)
-	}
-	m.reader = r
-	return nil
-}
-
-// Reset is the Manager interface implementation for the manager
-func (m *manager) Reset() {
-	m.lock.Lock()
-	defer m.lock.Unlock()
-	m.reader = nil
+	return m.poolByName
 }
