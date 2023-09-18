@@ -50,10 +50,35 @@ const (
 	DefaultConfigMapName = "nvidia-k8s-ipam-config"
 )
 
+// Migrator migrate from CM config to IPPool CR
+type Migrator struct {
+	K8sClient        client.Client
+	IPPoolsNamespace string
+	MigrationCh      chan struct{}
+	LeaderElection   bool
+	Logger           logr.Logger
+}
+
+// Implements manager.Runnable
+func (m *Migrator) Start(ctx context.Context) error {
+	err := Migrate(ctx, m.Logger, m.K8sClient, m.IPPoolsNamespace)
+	if err != nil {
+		m.Logger.Error(err, fmt.Sprintf("failed to migrate NV-IPAM config from ConfigMap, "+
+			"set %s env variable to disable migration", EnvDisableMigration))
+		return err
+	}
+	close(m.MigrationCh)
+	return nil
+}
+
+// Implements manager.NeedLeaderElection
+func (m *Migrator) NeedLeaderElection() bool {
+	return m.LeaderElection
+}
+
 // Migrate reads the ConfigMap with the IPAM configuration, reads the allocations
 // from the Nodes annotation, create IPPool CRs and delete the ConfigMap and annotations
-func Migrate(ctx context.Context, c client.Client, poolNamespace string) error {
-	logger := logr.FromContextOrDiscard(ctx).WithName("migrator")
+func Migrate(ctx context.Context, logger logr.Logger, c client.Client, poolNamespace string) error {
 	if os.Getenv(EnvDisableMigration) != "" {
 		logger.Info(fmt.Sprintf("%s set, skip controller migration", EnvDisableMigration))
 		return nil

@@ -171,9 +171,11 @@ var _ = Describe("App", func() {
 
 			go func() {
 				Expect(app.RunController(logr.NewContext(ctrlCtx, klog.NewKlogr()), cfg, &options.Options{
-					MetricsAddr:      "0", // disable
-					ProbeAddr:        "0", // disable
-					IPPoolsNamespace: TestNamespace,
+					MetricsAddr:             "0", // disable
+					ProbeAddr:               "0", // disable
+					IPPoolsNamespace:        TestNamespace,
+					EnableLeaderElection:    true,
+					LeaderElectionNamespace: TestNamespace,
 				})).NotTo(HaveOccurred())
 				close(controllerStopped)
 			}()

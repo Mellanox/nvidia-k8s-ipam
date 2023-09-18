@@ -46,6 +46,7 @@ import (
 type IPPoolReconciler struct {
 	PoolsNamespace string
 	NodeEventCh    chan event.GenericEvent
+	MigrationCh    chan struct{}
 	client.Client
 	Scheme   *runtime.Scheme
 	recorder record.EventRecorder
@@ -53,6 +54,11 @@ type IPPoolReconciler struct {
 
 // Reconcile contains logic to sync IPPool objects
 func (r *IPPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	select {
+	case <-r.MigrationCh:
+	case <-ctx.Done():
+		return ctrl.Result{}, fmt.Errorf("canceled")
+	}
 	reqLog := log.FromContext(ctx)
 	if req.Namespace != r.PoolsNamespace {
 		// this should never happen because of the watcher configuration of the manager from controller-runtime pkg

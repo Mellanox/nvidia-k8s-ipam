@@ -135,16 +135,25 @@ func RunController(ctx context.Context, config *rest.Config, opts *options.Optio
 		os.Exit(1)
 	}
 
-	if err := migrator.Migrate(ctx, k8sClient, opts.IPPoolsNamespace); err != nil {
-		logger.Error(err, fmt.Sprintf("failed to migrate NV-IPAM config from ConfigMap, "+
-			"set %s env variable to disable migration", migrator.EnvDisableMigration))
-		return err
+	migrationChan := make(chan struct{})
+	m := migrator.Migrator{
+		IPPoolsNamespace: opts.IPPoolsNamespace,
+		K8sClient:        k8sClient,
+		MigrationCh:      migrationChan,
+		LeaderElection:   opts.EnableLeaderElection,
+		Logger:           logger.WithName("Migrator"),
+	}
+	err = mgr.Add(&m)
+	if err != nil {
+		logger.Error(err, "failed to add Migrator to the Manager")
+		os.Exit(1)
 	}
 
 	nodeEventCH := make(chan event.GenericEvent, 1)
 
 	if err = (&nodectrl.NodeReconciler{
 		NodeEventCh:    nodeEventCH,
+		MigrationCh:    migrationChan,
 		PoolsNamespace: opts.IPPoolsNamespace,
 		Client:         mgr.GetClient(),
 		Scheme:         mgr.GetScheme(),
@@ -158,6 +167,7 @@ func RunController(ctx context.Context, config *rest.Config, opts *options.Optio
 		PoolsNamespace: opts.IPPoolsNamespace,
 		Client:         mgr.GetClient(),
 		Scheme:         mgr.GetScheme(),
+		MigrationCh:    migrationChan,
 	}).SetupWithManager(mgr); err != nil {
 		logger.Error(err, "unable to create controller", "controller", "IPPool")
 		return err
