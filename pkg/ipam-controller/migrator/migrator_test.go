@@ -23,6 +23,7 @@ import (
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/config"
@@ -145,7 +146,7 @@ var _ = Describe("Controller Migrator", func() {
 		Expect(updateNode(node2))
 
 		By("Run migrator")
-		Expect(migrator.Migrate(ctx, k8sClient, TestNamespace)).NotTo(HaveOccurred())
+		Expect(migrator.Migrate(ctx, klog.NewKlogr(), k8sClient, TestNamespace)).NotTo(HaveOccurred())
 
 		By("Verify Pool1 Spec")
 		pool1 := &ipamv1alpha1.IPPool{}
@@ -183,7 +184,7 @@ var _ = Describe("Controller Migrator", func() {
 
 	It("No ConfigMap", func() {
 		By("Run migrator")
-		Expect(migrator.Migrate(ctx, k8sClient, TestNamespace)).NotTo(HaveOccurred())
+		Expect(migrator.Migrate(ctx, klog.NewKlogr(), k8sClient, TestNamespace)).NotTo(HaveOccurred())
 	})
 
 	Context("Negative flows", func() {
@@ -197,12 +198,12 @@ var _ = Describe("Controller Migrator", func() {
 			}
 			Expect(k8sClient.Create(ctx, cm)).NotTo(HaveOccurred())
 			By("Run migrator - should fail")
-			Expect(migrator.Migrate(ctx, k8sClient, TestNamespace)).To(HaveOccurred())
+			Expect(migrator.Migrate(ctx, klog.NewKlogr(), k8sClient, TestNamespace)).To(HaveOccurred())
 
 			By("Create invalid cfg - not a json data")
 			updateConfigMap("{{")
 			By("Run migrator - should fail")
-			Expect(migrator.Migrate(ctx, k8sClient, TestNamespace)).To(HaveOccurred())
+			Expect(migrator.Migrate(ctx, klog.NewKlogr(), k8sClient, TestNamespace)).To(HaveOccurred())
 
 			By("Create invalid cfg - Gateway not in subnet")
 			var inValidConfig = `
@@ -212,7 +213,7 @@ var _ = Describe("Controller Migrator", func() {
 				}
 			}`
 			updateConfigMap(inValidConfig)
-			Expect(migrator.Migrate(ctx, k8sClient, TestNamespace)).To(HaveOccurred())
+			Expect(migrator.Migrate(ctx, klog.NewKlogr(), k8sClient, TestNamespace)).To(HaveOccurred())
 
 			By("Create valid cfg - IPPool exists with different spec")
 			updateConfigMap(validConfig)
@@ -228,7 +229,7 @@ var _ = Describe("Controller Migrator", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, pool1)).NotTo(HaveOccurred())
-			Expect(migrator.Migrate(ctx, k8sClient, TestNamespace)).To(HaveOccurred())
+			Expect(migrator.Migrate(ctx, klog.NewKlogr(), k8sClient, TestNamespace)).To(HaveOccurred())
 		})
 	})
 })
