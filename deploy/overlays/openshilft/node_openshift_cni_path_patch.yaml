@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-ds
+  namespace: system
+spec:
+  template:
+    spec:
+      volumes:
+        - name: cnibin
+          hostPath:
+            path: /var/lib/cni/bin
+            type: DirectoryOrCreate

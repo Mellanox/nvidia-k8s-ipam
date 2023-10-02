@@ -162,6 +162,13 @@ func RunController(ctx context.Context, config *rest.Config, opts *options.Optio
 		return err
 	}
 
+	if opts.EnableWebHook {
+		if err = (&ipamv1alpha1.IPPool{}).SetupWebhookWithManager(mgr); err != nil {
+			logger.Error(err, "unable to create webhook", "webhook", "IPPool")
+			os.Exit(1)
+		}
+	}
+
 	if err = (&poolctrl.IPPoolReconciler{
 		NodeEventCh:    nodeEventCH,
 		PoolsNamespace: opts.IPPoolsNamespace,

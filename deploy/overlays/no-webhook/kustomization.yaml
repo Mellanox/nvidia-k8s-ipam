@@ -1,0 +1,19 @@
+# Adds namespace to all resources.
+namespace: kube-system
+
+# Value of this field is prepended to the
+# names of all resources, e.g. a deployment named
+namePrefix: nv-ipam-
+
+# Labels to add to all resources and selectors.
+commonLabels:
+  app: nvidia-k8s-ipam
+
+resources:
+  - ../../crds
+  - ../../manifests/controller
+  - ../../manifests/node
+
+# Uncomment this to deploy to Openshift cluster
+#patches:
+#  - path: node_openshift_cni_path_patch.yaml

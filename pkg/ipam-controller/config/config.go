@@ -15,12 +15,12 @@ package config
 
 import (
 	"fmt"
-	"math"
-	"net"
 
-	cniUtils "github.com/containernetworking/cni/pkg/utils"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	metaValidation "k8s.io/apimachinery/pkg/apis/meta/v1/validation"
 	validationField "k8s.io/apimachinery/pkg/util/validation/field"
+
+	"github.com/Mellanox/nvidia-k8s-ipam/api/v1alpha1"
 )
 
 const (
@@ -65,33 +65,14 @@ func (c *Config) Validate() error {
 
 // ValidatePool validates the IPPool parameters
 func ValidatePool(name string, subnet string, gateway string, blockSize int) error {
-	if err := cniUtils.ValidateNetworkName(name); err != nil {
-		return fmt.Errorf("invalid IP pool name %s, should be compatible with CNI network name", name)
+	ipPool := v1alpha1.IPPool{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Spec: v1alpha1.IPPoolSpec{
+			Subnet:           subnet,
+			PerNodeBlockSize: blockSize,
+			Gateway:          gateway,
+			NodeSelector:     nil,
+		},
 	}
-	_, network, err := net.ParseCIDR(subnet)
-	if err != nil {
-		return fmt.Errorf("IP pool %s contains invalid subnet: %v", name, err)
-	}
-
-	if blockSize < 2 {
-		return fmt.Errorf("perNodeBlockSize should be at least 2")
-	}
-
-	setBits, bitsTotal := network.Mask.Size()
-	// possibleIPs = net size - network address - broadcast
-	possibleIPs := int(math.Pow(2, float64(bitsTotal-setBits))) - 2
-	if possibleIPs < blockSize {
-		// config is not valid even if only one node exist in the cluster
-		return fmt.Errorf("IP pool subnet contains less available IPs then " +
-			"requested by perNodeBlockSize parameter")
-	}
-	parsedGW := net.ParseIP(gateway)
-	if len(parsedGW) == 0 {
-		return fmt.Errorf("IP pool contains invalid gateway configuration: invalid IP")
-	}
-	if !network.Contains(parsedGW) {
-		return fmt.Errorf("IP pool contains invalid gateway configuration: " +
-			"gateway is outside of the subnet")
-	}
-	return nil
+	return ipPool.Validate().ToAggregate()
 }
