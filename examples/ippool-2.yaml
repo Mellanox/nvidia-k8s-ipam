@@ -10,7 +10,5 @@ spec:
   nodeSelector:
     nodeSelectorTerms:
     - matchExpressions:
-        - key: kubernetes.io/role
-          operator: In
-          values:
-            - worker
+        - key: node-role.kubernetes.io/worker
+          operator: Exists

@@ -79,10 +79,8 @@ spec:
   nodeSelector:
     nodeSelectorTerms:
     - matchExpressions:
-        - key: kubernetes.io/role
-          operator: In
-          values:
-            - worker
+        - key: node-role.kubernetes.io/worker
+          operator: Exists
 ```
 
 2. ipam-controller calculates and assigns unique IP Blocks for each Node via IPPool Status:
@@ -100,10 +98,8 @@ spec:
   nodeSelector:
     nodeSelectorTerms:
     - matchExpressions:
-      - key: kubernetes.io/role
-        operator: In
-        values:
-        - worker
+      - key: node-role.kubernetes.io/worker
+        operator: Exists
   perNodeBlockSize: 24
   subnet: 192.168.0.0/16
 status:
@@ -218,10 +214,8 @@ spec:
   nodeSelector:
     nodeSelectorTerms:
     - matchExpressions:
-        - key: kubernetes.io/role
-          operator: In
-          values:
-            - worker
+        - key: node-role.kubernetes.io/worker
+          operator: Exists
 ```
 
 * `spec`: contains the IP pool configuration
@@ -383,10 +377,8 @@ spec:
   nodeSelector:
     nodeSelectorTerms:
     - matchExpressions:
-        - key: kubernetes.io/role
-          operator: In
-          values:
-            - worker
+        - key: node-role.kubernetes.io/worker
+          operator: Exists
 EOF
 ```
 
