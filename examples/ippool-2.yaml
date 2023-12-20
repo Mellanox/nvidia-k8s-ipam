@@ -4,9 +4,9 @@ metadata:
   name: pool2
   namespace: kube-system
 spec:
-  subnet: 172.16.0.0/16
-  perNodeBlockSize: 128
-  gateway: 172.16.0.1
+  subnet: fd52:2eb5:44::/48
+  perNodeBlockSize: 500
+  gateway: fd52:2eb5:44::1
   nodeSelector:
     nodeSelectorTerms:
     - matchExpressions:
