@@ -131,7 +131,7 @@ _Example macvlan CNI configuration_:
   "mode": "bridge",
   "ipam": {
       "type": "nv-ipam",
-      "poolName": "my-pool"
+      "poolName": "pool1"
     }
 }
 ```
@@ -201,16 +201,37 @@ Controller flags:
 ipam-controller accepts IP Pools configuration via IPPool CRs.
 Multiple IPPool CRs can be created, with different NodeSelectors.
 
+##### IPv4 example
+
 ```yaml
 apiVersion: nv-ipam.nvidia.com/v1alpha1
 kind: IPPool
 metadata:
-  name: my-pool
+  name: pool1
   namespace: kube-system
 spec:
   subnet: 192.168.0.0/16
   perNodeBlockSize: 100
   gateway: 192.168.0.1
+  nodeSelector:
+    nodeSelectorTerms:
+    - matchExpressions:
+        - key: node-role.kubernetes.io/worker
+          operator: Exists
+```
+
+##### IPv6 example
+
+```yaml
+apiVersion: nv-ipam.nvidia.com/v1alpha1
+kind: IPPool
+metadata:
+  name: pool2
+  namespace: kube-system
+spec:
+  subnet: fd52:2eb5:44::/48
+  perNodeBlockSize: 500
+  gateway: fd52:2eb5:44::1
   nodeSelector:
     nodeSelectorTerms:
     - matchExpressions:
@@ -313,7 +334,7 @@ nv-ipam accepts the following CNI configuration:
 ```json
 {
     "type": "nv-ipam",
-    "poolName": "my-pool",
+    "poolName": "pool1,pool2",
     "daemonSocket": "unix:///var/lib/cni/nv-ipam/daemon.sock",
     "daemonCallTimeoutSeconds": 5,
     "confDir": "/etc/cni/net.d/nv-ipam.d",
@@ -368,7 +389,7 @@ cat <<EOF | kubectl apply -f -
 apiVersion: nv-ipam.nvidia.com/v1alpha1
 kind: IPPool
 metadata:
-  name: my-pool
+  name: pool1
   namespace: kube-system
 spec:
   subnet: 192.168.0.0/16
