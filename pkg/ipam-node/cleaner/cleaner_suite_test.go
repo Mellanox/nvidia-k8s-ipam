@@ -24,15 +24,17 @@ import (
 
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
 var (
-	cfg       *rest.Config
-	k8sClient client.Client
-	testEnv   *envtest.Environment
-	cFunc     context.CancelFunc
-	ctx       context.Context
+	cfg        *rest.Config
+	k8sClient  client.Client
+	fakeClient client.Client
+	testEnv    *envtest.Environment
+	cFunc      context.CancelFunc
+	ctx        context.Context
 )
 
 func TestCleaner(t *testing.T) {
@@ -56,6 +58,9 @@ var _ = BeforeSuite(func() {
 	k8sClient, err = client.New(cfg, client.Options{})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+
+	fakeClient = fake.NewFakeClient()
+	Expect(fakeClient).NotTo(BeNil())
 })
 
 var _ = AfterSuite(func() {
