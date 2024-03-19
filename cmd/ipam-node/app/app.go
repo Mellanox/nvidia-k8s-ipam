@@ -154,6 +154,11 @@ func RunNodeDaemon(ctx context.Context, config *rest.Config, opts *options.Optio
 		return err
 	}
 
+	k8sClient, err := client.New(config, client.Options{Scheme: mgr.GetScheme(), Mapper: mgr.GetRESTMapper()})
+	if err != nil {
+		logger.Error(err, "unable to direct k8s client")
+	}
+
 	if err = (&ippoolctrl.IPPoolReconciler{
 		PoolManager: poolManager,
 		Client:      mgr.GetClient(),
@@ -258,7 +263,7 @@ func RunNodeDaemon(ctx context.Context, config *rest.Config, opts *options.Optio
 			}
 			return
 		}
-		c := cleaner.New(mgr.GetClient(), store, poolManager, time.Minute, 3)
+		c := cleaner.New(mgr.GetClient(), k8sClient, store, poolManager, time.Minute, 3)
 		c.Start(innerCtx)
 		logger.Info("cleaner stopped")
 	}()

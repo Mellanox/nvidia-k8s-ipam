@@ -73,7 +73,7 @@ var _ = Describe("Cleaner", func() {
 			// this will create empty pool config
 			session.SetLastReservedIP(testPool3, net.ParseIP("192.168.33.100"))
 
-			cleaner := cleanerPkg.New(k8sClient, store, poolManager, time.Millisecond*100, 3)
+			cleaner := cleanerPkg.New(fakeClient, k8sClient, store, poolManager, time.Millisecond*100, 3)
 
 			pod1UID := createPod(testPodName1, testNamespace)
 			_ = createPod(testPodName2, testNamespace)

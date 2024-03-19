@@ -45,11 +45,12 @@ type Cleaner interface {
 // New creates and initialize new cleaner instance
 // "checkInterval" defines delay between checks for stale allocations.
 // "checkCountBeforeRelease: defines how many check to do before remove the allocation
-func New(client client.Client, store storePkg.Store, poolConfReader pool.ConfigReader,
+func New(cachedClient client.Client, directClient client.Client, store storePkg.Store, poolConfReader pool.ConfigReader,
 	checkInterval time.Duration,
 	checkCountBeforeRelease int) Cleaner {
 	return &cleaner{
-		client:                  client,
+		cachedClient:            cachedClient,
+		directClient:            directClient,
 		store:                   store,
 		poolConfReader:          poolConfReader,
 		checkInterval:           checkInterval,
@@ -59,7 +60,8 @@ func New(client client.Client, store storePkg.Store, poolConfReader pool.ConfigR
 }
 
 type cleaner struct {
-	client                  client.Client
+	cachedClient            client.Client
+	directClient            client.Client
 	store                   storePkg.Store
 	poolConfReader          pool.ConfigReader
 	checkInterval           time.Duration
@@ -109,22 +111,27 @@ func (c *cleaner) loop(ctx context.Context) error {
 				resLogger.V(2).Info("reservation has no required metadata fields, skip")
 				continue
 			}
-			pod := &corev1.Pod{}
-			err := c.client.Get(ctx, apiTypes.NamespacedName{
-				Namespace: reservation.Metadata.PodNamespace,
-				Name:      reservation.Metadata.PodName,
-			}, pod)
-			if err != nil && !apiErrors.IsNotFound(err) {
+			// first check in the cache
+			found, err := c.checkPod(ctx, c.cachedClient, reservation)
+			if err != nil {
 				session.Cancel()
 				return fmt.Errorf("failed to read Pod info from the cache: %v", err)
 			}
-			if apiErrors.IsNotFound(err) ||
-				(reservation.Metadata.PodUUID != "" && reservation.Metadata.PodUUID != string(pod.UID)) {
-				c.staleAllocations[key]++
-				resLogger.V(2).Info("pod not found in the API, increase stale counter",
-					"value", c.staleAllocations[key])
-			} else {
+			if !found {
+				resLogger.V(2).Info("cache check failed for the Pod, check in the API")
+				// pod not found in the cache, try to query API directly to make sure
+				// that we use latest state
+				found, err = c.checkPod(ctx, c.directClient, reservation)
+				if err != nil {
+					session.Cancel()
+					return fmt.Errorf("failed to read Pod info from the API: %v", err)
+				}
+			}
+			if found {
 				delete(c.staleAllocations, key)
+			} else {
+				c.staleAllocations[key]++
+				resLogger.V(2).Info("pod not found, increase stale counter", "value", c.staleAllocations[key])
 			}
 		}
 	}
@@ -154,6 +161,25 @@ func (c *cleaner) loop(ctx context.Context) error {
 		return fmt.Errorf("failed to commit changes to the store: %v", err)
 	}
 	return nil
+}
+
+// return true if pod exist, error in case if an unknown error occurred
+func (c *cleaner) checkPod(ctx context.Context, k8sClient client.Client, reservation types.Reservation) (bool, error) {
+	pod := &corev1.Pod{}
+	err := k8sClient.Get(ctx, apiTypes.NamespacedName{
+		Namespace: reservation.Metadata.PodNamespace,
+		Name:      reservation.Metadata.PodName,
+	}, pod)
+	if err != nil && !apiErrors.IsNotFound(err) {
+		return false, fmt.Errorf("failed to read Pod info: %v", err)
+	}
+	if apiErrors.IsNotFound(err) ||
+		(reservation.Metadata.PodUUID != "" && reservation.Metadata.PodUUID != string(pod.UID)) {
+		// pod not found or it has different UUID (was recreated)
+		return false, nil
+	}
+	// pod exist
+	return true, nil
 }
 
 func (c *cleaner) getStaleAllocKey(poolName string, r types.Reservation) string {
