@@ -31,6 +31,7 @@ import (
 	"github.com/google/renameio/v2"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -39,6 +40,7 @@ import (
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
@@ -141,7 +143,11 @@ func RunNodeDaemon(ctx context.Context, config *rest.Config, opts *options.Optio
 		Scheme:                 scheme,
 		Metrics:                metricsserver.Options{BindAddress: opts.MetricsAddr},
 		HealthProbeBindAddress: opts.ProbeAddr,
-		Cache:                  cache.Options{DefaultNamespaces: map[string]cache.Config{opts.PoolsNamespace: {}}},
+		Cache: cache.Options{
+			DefaultNamespaces: map[string]cache.Config{opts.PoolsNamespace: {}},
+			ByObject: map[client.Object]cache.ByObject{
+				&corev1.Pod{}: {Namespaces: map[string]cache.Config{cache.AllNamespaces: {}}}},
+		},
 	})
 	if err != nil {
 		logger.Error(err, "unable to initialize manager")
