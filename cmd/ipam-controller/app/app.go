@@ -29,9 +29,11 @@ import (
 	"k8s.io/component-base/term"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	// register json format for logger
 	_ "k8s.io/component-base/logs/json/register"
@@ -113,14 +115,13 @@ func RunController(ctx context.Context, config *rest.Config, opts *options.Optio
 
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
 		Scheme:                        scheme,
-		Namespace:                     opts.IPPoolsNamespace,
-		MetricsBindAddress:            opts.MetricsAddr,
-		Port:                          9443,
+		Metrics:                       metricsserver.Options{BindAddress: opts.MetricsAddr},
 		HealthProbeBindAddress:        opts.ProbeAddr,
 		LeaderElection:                opts.EnableLeaderElection,
 		LeaderElectionNamespace:       opts.LeaderElectionNamespace,
 		LeaderElectionID:              "dd1643cf.nvidia.com",
 		LeaderElectionReleaseOnCancel: true,
+		Cache:                         cache.Options{DefaultNamespaces: map[string]cache.Config{opts.IPPoolsNamespace: {}}},
 	})
 
 	if err != nil {

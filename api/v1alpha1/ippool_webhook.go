@@ -18,6 +18,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	logPkg "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 var logger = logPkg.Log.WithName("IPPool-validator")
@@ -32,29 +33,29 @@ func (r *IPPool) SetupWebhookWithManager(mgr ctrl.Manager) error {
 var _ webhook.Validator = &IPPool{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
-func (r *IPPool) ValidateCreate() error {
+func (r *IPPool) ValidateCreate() (admission.Warnings, error) {
 	logger.V(1).Info("validate create", "name", r.Name)
 	return r.validate()
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (r *IPPool) ValidateUpdate(_ runtime.Object) error {
+func (r *IPPool) ValidateUpdate(_ runtime.Object) (admission.Warnings, error) {
 	logger.V(1).Info("validate update", "name", r.Name)
 	return r.validate()
 }
 
-func (r *IPPool) validate() error {
+func (r *IPPool) validate() (admission.Warnings, error) {
 	errList := r.Validate()
 	if len(errList) == 0 {
 		logger.V(1).Info("validation succeed")
-		return nil
+		return nil, nil
 	}
 	err := errList.ToAggregate()
 	logger.V(1).Info("validation failed", "reason", err.Error())
-	return err
+	return nil, err
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
-func (r *IPPool) ValidateDelete() error {
-	return nil
+func (r *IPPool) ValidateDelete() (admission.Warnings, error) {
+	return nil, nil
 }
