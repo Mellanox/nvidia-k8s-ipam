@@ -159,8 +159,8 @@ func (r *IPPoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&ipamv1alpha1.IPPool{}).
 		// catch notifications received through chan from Node controller
-		Watches(&source.Channel{Source: r.NodeEventCh}, handler.Funcs{
-			GenericFunc: func(e event.GenericEvent, q workqueue.RateLimitingInterface) {
+		WatchesRawSource(&source.Channel{Source: r.NodeEventCh}, handler.Funcs{
+			GenericFunc: func(ctx context.Context, e event.GenericEvent, q workqueue.RateLimitingInterface) {
 				q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
 					Namespace: e.Object.GetNamespace(),
 					Name:      e.Object.GetName(),
