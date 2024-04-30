@@ -209,6 +209,7 @@ GRPC_DIR ?= $(PROJECT_DIR)/api/grpc
 PROTO_DIR ?= $(GRPC_DIR)/proto
 GENERATED_CODE_DIR ?= $(GRPC_DIR)
 
+.PHONY: grpc-generate
 grpc-generate: protoc protoc-gen-go protoc-gen-go-grpc ## Generate GO client and server GRPC code
 	@echo "generate GRPC API"; \
 	echo "   go module: $(API_PKG_GO_MOD)"; \
@@ -236,6 +237,7 @@ grpc-generate: protoc protoc-gen-go protoc-gen-go-grpc ## Generate GO client and
 	done; \
 	$(PROTOC)  $$PROTOC_OPTIONS $$TARGET_FILES
 
+.PHONY: grpc-check
 grpc-check: grpc-format grpc-lint protoc protoc-gen-go protoc-gen-go-grpc $(GRPC_TMP_DIR)  ## Check that generated GO client code match proto files
 	@rm -rf $(GRPC_TMP_DIR)/nvidia/
 	@$(MAKE) GENERATED_CODE_DIR=$(GRPC_TMP_DIR) grpc-generate
@@ -243,15 +245,18 @@ grpc-check: grpc-format grpc-lint protoc protoc-gen-go protoc-gen-go-grpc $(GRPC
 		(printf "\n\nOutdated files detected!\nPlease, run 'make generate' to regenerate GO code\n\n" && exit 1)
 	@echo "generated files are up to date"
 
+.PHONY: grpc-lint
 grpc-lint: buf  ## Lint GRPC files
 	@echo "lint protobuf files";
 	cd $(PROTO_DIR) && \
 	$(BUF) lint --config ../buf.yaml
 
+.PHONY: grpc-format
 grpc-format: buf  ## Format GRPC files
 	@echo "format protobuf files";
 	cd $(PROTO_DIR) && \
 	$(BUF) format -w --exit-code
+
 .PHONY: controller-gen
 controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary
 $(CONTROLLER_GEN): | $(LOCALBIN)
