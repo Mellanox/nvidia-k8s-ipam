@@ -65,6 +65,16 @@ var _ = Describe("Validate", func() {
 		}
 		Expect(ipPool.Validate()).To(BeEmpty())
 	})
+	It("Valid - no Gateway", func() {
+		ipPool := v1alpha1.IPPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.IPPoolSpec{
+				Subnet:           "192.168.0.0/16",
+				PerNodeBlockSize: 128,
+			},
+		}
+		Expect(ipPool.Validate()).To(BeEmpty())
+	})
 	It("Empty object", func() {
 		ipPool := v1alpha1.IPPool{}
 		Expect(ipPool.Validate().ToAggregate().Error()).
@@ -72,7 +82,6 @@ var _ = Describe("Validate", func() {
 				ContainSubstring("metadata.name"),
 				ContainSubstring("spec.subnet"),
 				ContainSubstring("spec.perNodeBlockSize"),
-				ContainSubstring("gateway"),
 			))
 	})
 	It("Invalid - perNodeBlockSize is too large", func() {

@@ -37,7 +37,6 @@ var _ = Describe("IP ranges", func() {
 			Subnet:     networkSubnet(subnetStr),
 			RangeStart: net.IP{192, 0, 2, 1},
 			RangeEnd:   net.IP{192, 0, 2, 254},
-			Gateway:    net.IP{192, 0, 2, 1},
 		}))
 	})
 	It("should generate sane defaults for a smaller ipv4 subnet", func() {
@@ -51,7 +50,6 @@ var _ = Describe("IP ranges", func() {
 			Subnet:     networkSubnet(subnetStr),
 			RangeStart: net.IP{192, 0, 2, 1},
 			RangeEnd:   net.IP{192, 0, 2, 126},
-			Gateway:    net.IP{192, 0, 2, 1},
 		}))
 	})
 	It("should reject ipv4 subnet using a masked address", func() {
@@ -97,7 +95,6 @@ var _ = Describe("IP ranges", func() {
 			Subnet:     networkSubnet(subnetStr),
 			RangeStart: net.ParseIP("2001:DB8:1::1"),
 			RangeEnd:   net.ParseIP("2001:DB8:1::ffff:ffff:ffff:ffff"),
-			Gateway:    net.ParseIP("2001:DB8:1::1"),
 		}))
 	})
 

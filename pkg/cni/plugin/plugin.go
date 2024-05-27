@@ -168,21 +168,24 @@ func grpcRespToResult(resp *nodev1.AllocateResponse) (*current.Result, error) {
 		if alloc.Ip == "" {
 			return nil, logErr("IP can't be empty")
 		}
-		if alloc.Gateway == "" {
-			return nil, logErr("Gateway can't be empty")
-		}
 		ipAddr, netAddr, err := net.ParseCIDR(alloc.Ip)
 		if err != nil {
 			return nil, logErr(fmt.Sprintf("unexpected IP address format, received value: %s", alloc.Ip))
 		}
-		gwIP := net.ParseIP(alloc.Gateway)
-		if gwIP == nil {
-			return nil, logErr(fmt.Sprintf("unexpected Gateway address format, received value: %s", alloc.Gateway))
-		}
-		result.IPs = append(result.IPs, &current.IPConfig{
+
+		ipConfig := &current.IPConfig{
 			Address: net.IPNet{IP: ipAddr, Mask: netAddr.Mask},
-			Gateway: gwIP,
-		})
+		}
+
+		if alloc.Gateway != "" {
+			gwIP := net.ParseIP(alloc.Gateway)
+			if gwIP == nil {
+				return nil, logErr(fmt.Sprintf("unexpected Gateway address format, received value: %s", alloc.Gateway))
+			}
+			ipConfig.Gateway = gwIP
+		}
+
+		result.IPs = append(result.IPs, ipConfig)
 	}
 
 	return result, nil

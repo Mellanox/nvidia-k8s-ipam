@@ -40,7 +40,7 @@ type IPPoolSpec struct {
 	// must be less than amount of available IPs in the subnet
 	PerNodeBlockSize int `json:"perNodeBlockSize"`
 	// gateway for the pool
-	Gateway string `json:"gateway"`
+	Gateway string `json:"gateway,omitempty"`
 	// selector for nodes, if empty match all nodes
 	NodeSelector *corev1.NodeSelector `json:"nodeSelector,omitempty"`
 }

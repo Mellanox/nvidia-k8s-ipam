@@ -139,7 +139,6 @@ spec:
                 description: subnet of the pool
                 type: string
             required:
-            - gateway
             - perNodeBlockSize
             - subnet
             type: object
