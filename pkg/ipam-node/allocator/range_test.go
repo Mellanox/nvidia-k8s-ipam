@@ -52,6 +52,19 @@ var _ = Describe("IP ranges", func() {
 			RangeEnd:   net.IP{192, 0, 2, 126},
 		}))
 	})
+	It("should generate sane defaults for a /31 ipv4 subnet", func() {
+		subnetStr := "192.0.2.0/31"
+		r := allocator.Range{Subnet: mustSubnet(subnetStr)}
+
+		err := r.Canonicalize()
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(r).To(Equal(allocator.Range{
+			Subnet:     networkSubnet(subnetStr),
+			RangeStart: net.IP{192, 0, 2, 0},
+			RangeEnd:   net.IP{192, 0, 2, 1},
+		}))
+	})
 	It("should reject ipv4 subnet using a masked address", func() {
 		subnetStr := "192.0.2.12/24"
 		r := allocator.Range{Subnet: mustSubnet(subnetStr)}
@@ -98,10 +111,24 @@ var _ = Describe("IP ranges", func() {
 		}))
 	})
 
-	It("Should reject a network that's too small", func() {
-		r := allocator.Range{Subnet: mustSubnet("192.0.2.0/31")}
+	It("should generate sane defaults for /127 ipv6 prefix", func() {
+		subnetStr := "2001:DB8:1::/127"
+		r := allocator.Range{Subnet: mustSubnet(subnetStr)}
+
 		err := r.Canonicalize()
-		Expect(err).Should(MatchError("network 192.0.2.0/31 too small to allocate from"))
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(r).To(Equal(allocator.Range{
+			Subnet:     networkSubnet(subnetStr),
+			RangeStart: net.ParseIP("2001:DB8:1::0"),
+			RangeEnd:   net.ParseIP("2001:DB8:1::1"),
+		}))
+	})
+
+	It("Should reject a network that's too small", func() {
+		r := allocator.Range{Subnet: mustSubnet("192.0.2.0/32")}
+		err := r.Canonicalize()
+		Expect(err).Should(MatchError("network 192.0.2.0/32 too small to allocate from"))
 	})
 
 	It("should reject invalid RangeStart and RangeEnd specifications", func() {
@@ -123,6 +150,25 @@ var _ = Describe("IP ranges", func() {
 		Expect(err).Should(MatchError("RangeStart 192.0.2.50 not in network 192.0.2.0/24"))
 	})
 
+	It("should reject invalid RangeStart and RangeEnd for point to point networks", func() {
+		subnetStr := "192.0.2.2/31"
+		r := allocator.Range{Subnet: mustSubnet(subnetStr), RangeStart: net.ParseIP("192.0.2.1")}
+		err := r.Canonicalize()
+		Expect(err).Should(MatchError("RangeStart 192.0.2.1 not in network 192.0.2.2/31"))
+
+		r = allocator.Range{Subnet: mustSubnet(subnetStr), RangeEnd: net.ParseIP("192.0.2.4")}
+		err = r.Canonicalize()
+		Expect(err).Should(MatchError("RangeEnd 192.0.2.4 not in network 192.0.2.2/31"))
+
+		r = allocator.Range{
+			Subnet:     networkSubnet(subnetStr),
+			RangeStart: net.ParseIP("192.0.2.3"),
+			RangeEnd:   net.ParseIP("192.0.2.2"),
+		}
+		err = r.Canonicalize()
+		Expect(err).Should(MatchError("RangeStart 192.0.2.3 not in network 192.0.2.2/31"))
+	})
+
 	It("should parse all fields correctly", func() {
 		subnetStr := "192.0.2.0/24"
 		r := allocator.Range{
@@ -142,6 +188,40 @@ var _ = Describe("IP ranges", func() {
 		}))
 	})
 
+	It("should parse /31 and /127 correctly", func() {
+		subnetStr := "192.0.2.2/31"
+		r := allocator.Range{
+			Subnet:     mustSubnet(subnetStr),
+			RangeStart: net.ParseIP("192.0.2.2"),
+			RangeEnd:   net.ParseIP("192.0.2.3"),
+			Gateway:    net.ParseIP("192.0.2.3"),
+		}
+		Expect(r.Canonicalize()).NotTo(HaveOccurred())
+
+		Expect(r).To(Equal(allocator.Range{
+			Subnet:     networkSubnet(subnetStr),
+			RangeStart: net.IP{192, 0, 2, 2},
+			RangeEnd:   net.IP{192, 0, 2, 3},
+			Gateway:    net.IP{192, 0, 2, 3},
+		}))
+
+		subnetV6Str := "2001:DB8:1::4/127"
+		r = allocator.Range{
+			Subnet:     mustSubnet(subnetV6Str),
+			RangeStart: net.ParseIP("2001:DB8:1::4"),
+			RangeEnd:   net.ParseIP("2001:DB8:1::5"),
+			Gateway:    net.ParseIP("2001:DB8:1::4"),
+		}
+		Expect(r.Canonicalize()).NotTo(HaveOccurred())
+
+		Expect(r).To(Equal(allocator.Range{
+			Subnet:     mustSubnet(subnetV6Str),
+			RangeStart: net.ParseIP("2001:DB8:1::4"),
+			RangeEnd:   net.ParseIP("2001:DB8:1::5"),
+			Gateway:    net.ParseIP("2001:DB8:1::4"),
+		}))
+	})
+
 	It("should accept v4 IPs in range and reject IPs out of range", func() {
 		r := allocator.Range{
 			Subnet:     mustSubnet("192.0.2.0/24"),
@@ -158,6 +238,34 @@ var _ = Describe("IP ranges", func() {
 		Expect(r.Contains(net.ParseIP("192.0.2.40"))).Should(BeTrue())
 		Expect(r.Contains(net.ParseIP("192.0.2.50"))).Should(BeTrue())
 		Expect(r.Contains(net.ParseIP("192.0.2.51"))).Should(BeFalse())
+	})
+
+	It("/31 network Contains", func() {
+		r := allocator.Range{
+			Subnet: mustSubnet("192.0.2.2/31"),
+		}
+		err := r.Canonicalize()
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(r.Contains(net.ParseIP("192.0.2.0"))).Should(BeFalse())
+		Expect(r.Contains(net.ParseIP("192.0.2.1"))).Should(BeFalse())
+		Expect(r.Contains(net.ParseIP("192.0.2.2"))).Should(BeTrue())
+		Expect(r.Contains(net.ParseIP("192.0.2.3"))).Should(BeTrue())
+		Expect(r.Contains(net.ParseIP("192.0.2.4"))).Should(BeFalse())
+	})
+
+	It("/127 network Contains", func() {
+		r := allocator.Range{
+			Subnet: mustSubnet("2001:DB8:1::2/127"),
+		}
+		err := r.Canonicalize()
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(r.Contains(net.ParseIP("2001:DB8:1::0"))).Should(BeFalse())
+		Expect(r.Contains(net.ParseIP("2001:DB8:1::1"))).Should(BeFalse())
+		Expect(r.Contains(net.ParseIP("2001:DB8:1::2"))).Should(BeTrue())
+		Expect(r.Contains(net.ParseIP("2001:DB8:1::3"))).Should(BeTrue())
+		Expect(r.Contains(net.ParseIP("2001:DB8:1::4"))).Should(BeFalse())
 	})
 
 	It("should accept v6 IPs in range and reject IPs out of range", func() {

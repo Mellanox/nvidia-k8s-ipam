@@ -38,10 +38,9 @@ func (r *Range) Canonicalize() error {
 		return err
 	}
 
-	// Can't create an allocator for a network with no addresses, eg
-	// a /32 or /31
+	// Can't create an allocator for /32 or /128 networks (single IP)
 	ones, masklen := r.Subnet.Mask.Size()
-	if ones > masklen-2 {
+	if ones > masklen-1 {
 		return fmt.Errorf("network %s too small to allocate from", (*net.IPNet)(&r.Subnet).String())
 	}
 
@@ -75,9 +74,13 @@ func (r *Range) Canonicalize() error {
 			return fmt.Errorf("RangeStart %s not in network %s", r.RangeStart.String(), (*net.IPNet)(&r.Subnet).String())
 		}
 	} else {
-		r.RangeStart = ip.NextIP(r.Subnet.IP)
-		if r.RangeStart == nil {
-			return fmt.Errorf("computed RangeStart is not a valid IP")
+		if isPointToPoint(r.Subnet) {
+			r.RangeStart = r.Subnet.IP
+		} else {
+			r.RangeStart = ip.NextIP(r.Subnet.IP)
+			if r.RangeStart == nil {
+				return fmt.Errorf("computed RangeStart is not a valid IP")
+			}
 		}
 	}
 
@@ -160,13 +163,19 @@ func CanonicalizeIP(addr *net.IP) error {
 	return nil
 }
 
-// Determine the last IP of a subnet, excluding the broadcast if IPv4
+// Returns true if IPNet is point to point (/31 or /127)
+func isPointToPoint(subnet types.IPNet) bool {
+	ones, maskLen := subnet.Mask.Size()
+	return ones == maskLen-1
+}
+
+// Determine the last IP of a subnet, excluding the broadcast if IPv4 (if not /31 net)
 func lastIP(subnet types.IPNet) net.IP {
 	var end net.IP
 	for i := 0; i < len(subnet.IP); i++ {
 		end = append(end, subnet.IP[i]|^subnet.Mask[i])
 	}
-	if subnet.IP.To4() != nil {
+	if subnet.IP.To4() != nil && !isPointToPoint(subnet) {
 		end[3]--
 	}
 
