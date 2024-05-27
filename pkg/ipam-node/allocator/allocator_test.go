@@ -398,4 +398,22 @@ var _ = Describe("allocator", func() {
 			checkAlloc(a, "2", net.IP{192, 168, 1, 5})
 		})
 	})
+	Context("point to point ranges", func() {
+		It("should allocate two IPs", func() {
+			session, err := storePkg.New(
+				filepath.Join(GinkgoT().TempDir(), "test_store")).Open(context.Background())
+			Expect(err).NotTo(HaveOccurred())
+			defer func() {
+				_ = session.Commit()
+			}()
+			p := allocator.RangeSet{
+				allocator.Range{Subnet: mustSubnet("192.168.1.0/31")},
+			}
+			Expect(p.Canonicalize()).NotTo(HaveOccurred())
+			a := allocator.NewIPAllocator(&p, testPoolName, session)
+			// get range iterator and do the first Next
+			checkAlloc(a, "0", net.IP{192, 168, 1, 0})
+			checkAlloc(a, "1", net.IP{192, 168, 1, 1})
+		})
+	})
 })
