@@ -121,7 +121,7 @@ func (h *Handlers) allocateInPool(pool string, reqLog logr.Logger,
 		return PoolAlloc{}, poolCfgError(poolLog, pool,
 			fmt.Sprintf("invalid range config: %s", err.Error()))
 	}
-	alloc := h.getAllocFunc(rangeSet, pool, session)
+	alloc := h.getAllocFunc(rangeSet, &allocator.RangeSet{}, pool, session)
 	allocMeta := types.ReservationMetadata{
 		CreateTime:         time.Now().Format(time.RFC3339Nano),
 		PoolConfigSnapshot: poolCfg.String(),

@@ -39,17 +39,20 @@ type IPAllocator interface {
 }
 
 type allocator struct {
-	rangeSet *RangeSet
-	session  storePkg.Session
-	poolName string
+	rangeSet   *RangeSet
+	session    storePkg.Session
+	poolName   string
+	exclusions *RangeSet
 }
 
 // NewIPAllocator create and initialize a new instance of IP allocator
-func NewIPAllocator(s *RangeSet, poolName string, session storePkg.Session) IPAllocator {
+func NewIPAllocator(s *RangeSet, exclusions *RangeSet,
+	poolName string, session storePkg.Session) IPAllocator {
 	return &allocator{
-		rangeSet: s,
-		session:  session,
-		poolName: poolName,
+		rangeSet:   s,
+		session:    session,
+		poolName:   poolName,
+		exclusions: exclusions,
 	}
 }
 
@@ -63,6 +66,9 @@ func (a *allocator) Allocate(id string, ifName string, meta types.ReservationMet
 		reservedIP, gw = iter.Next()
 		if reservedIP == nil {
 			return nil, ErrNoFreeAddresses
+		}
+		if a.exclusions != nil && a.exclusions.Contains(reservedIP.IP) {
+			continue
 		}
 		err := a.session.Reserve(a.poolName, id, ifName, meta, reservedIP.IP)
 		if err == nil {

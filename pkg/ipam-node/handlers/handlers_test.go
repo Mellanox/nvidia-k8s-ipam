@@ -95,7 +95,8 @@ var _ = Describe("Handlers", func() {
 		allocators = map[string]*allocatorMockPkg.IPAllocator{
 			testPoolName1: allocatorMockPkg.NewIPAllocator(GinkgoT()),
 			testPoolName2: allocatorMockPkg.NewIPAllocator(GinkgoT())}
-		getAllocFunc = func(s *allocatorPkg.RangeSet, poolName string, store storePkg.Session) allocatorPkg.IPAllocator {
+		getAllocFunc = func(s *allocatorPkg.RangeSet, exclusions *allocatorPkg.RangeSet,
+			poolName string, store storePkg.Session) allocatorPkg.IPAllocator {
 			return allocators[poolName]
 		}
 		handlers = handlersPkg.New(poolManager, store, getAllocFunc)

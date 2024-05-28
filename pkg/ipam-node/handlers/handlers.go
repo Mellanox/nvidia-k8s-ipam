@@ -27,7 +27,8 @@ import (
 	poolPkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
 )
 
-type GetAllocatorFunc = func(s *allocator.RangeSet, poolName string, session storePkg.Session) allocator.IPAllocator
+type GetAllocatorFunc = func(s *allocator.RangeSet, exclusions *allocator.RangeSet,
+	poolName string, session storePkg.Session) allocator.IPAllocator
 
 // New create and initialize new instance of grpc Handlers
 func New(poolConfReader poolPkg.ConfigReader, store storePkg.Store, getAllocFunc GetAllocatorFunc) *Handlers {
