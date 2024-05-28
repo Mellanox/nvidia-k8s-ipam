@@ -14,7 +14,7 @@
 package v1alpha1
 
 import (
-	"math"
+	"math/big"
 	"net"
 
 	cniUtils "github.com/containernetworking/cni/pkg/utils"
@@ -42,10 +42,7 @@ func (r *IPPool) Validate() field.ErrorList {
 	}
 
 	if network != nil && r.Spec.PerNodeBlockSize >= 2 {
-		setBits, bitsTotal := network.Mask.Size()
-		// possibleIPs = net size - network address - broadcast
-		possibleIPs := int(math.Pow(2, float64(bitsTotal-setBits))) - 2
-		if possibleIPs < r.Spec.PerNodeBlockSize {
+		if GetPossibleIPCount(network).Cmp(big.NewInt(int64(r.Spec.PerNodeBlockSize))) < 0 {
 			// config is not valid even if only one node exist in the cluster
 			errList = append(errList, field.Invalid(
 				field.NewPath("spec", "perNodeBlockSize"), r.Spec.PerNodeBlockSize,

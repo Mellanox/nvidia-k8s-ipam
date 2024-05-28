@@ -1,0 +1,22 @@
+apiVersion: nv-ipam.nvidia.com/v1alpha1
+kind: CIDRPool
+metadata:
+  name: pool1
+  namespace: kube-system
+spec:
+  cidr: 192.168.0.0/16
+  gatewayIndex: 1
+  perNodeNetworkPrefix: 24
+  exclusions: # optional
+    - startIP: 192.168.0.10
+      endIP: 192.168.0.20
+  staticAllocations: # optional
+    - nodeName: node-33
+      prefix: 192.168.33.0/24
+      gateway: 192.168.33.10
+    - prefix: 192.168.1.0/24
+  nodeSelector: # optional
+    nodeSelectorTerms:
+      - matchExpressions:
+          - key: node-role.kubernetes.io/worker
+            operator: Exists
