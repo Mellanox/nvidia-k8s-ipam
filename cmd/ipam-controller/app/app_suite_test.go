@@ -31,7 +31,6 @@ import (
 
 const (
 	TestNamespace     = "test-ns"
-	TestConfigMapName = "test-config"
 )
 
 var (

@@ -32,9 +32,10 @@ import (
 
 // NodeReconciler reconciles Node objects
 type NodeReconciler struct {
-	PoolsNamespace string
-	NodeEventCh    chan event.GenericEvent
-	MigrationCh    chan struct{}
+	PoolsNamespace      string
+	IPPoolNodeEventCH   chan event.GenericEvent
+	CIDRPoolNodeEventCH chan event.GenericEvent
+	MigrationCh         chan struct{}
 	client.Client
 	Scheme *runtime.Scheme
 }
@@ -57,13 +58,23 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		reqLog.Info("node object removed")
 	}
 	// node updated, trigger sync for all pools
-	poolList := &ipamv1alpha1.IPPoolList{}
-	if err := r.Client.List(ctx, poolList, client.InNamespace(r.PoolsNamespace)); err != nil {
+	ipPoolList := &ipamv1alpha1.IPPoolList{}
+	if err := r.Client.List(ctx, ipPoolList, client.InNamespace(r.PoolsNamespace)); err != nil {
 		return ctrl.Result{}, err
 	}
-	for _, p := range poolList.Items {
-		r.NodeEventCh <- event.GenericEvent{
+	for _, p := range ipPoolList.Items {
+		r.IPPoolNodeEventCH <- event.GenericEvent{
 			Object: &ipamv1alpha1.IPPool{
+				ObjectMeta: metav1.ObjectMeta{Namespace: r.PoolsNamespace, Name: p.Name},
+			}}
+	}
+	cidrPoolList := &ipamv1alpha1.CIDRPoolList{}
+	if err := r.Client.List(ctx, cidrPoolList, client.InNamespace(r.PoolsNamespace)); err != nil {
+		return ctrl.Result{}, err
+	}
+	for _, p := range cidrPoolList.Items {
+		r.CIDRPoolNodeEventCH <- event.GenericEvent{
+			Object: &ipamv1alpha1.CIDRPool{
 				ObjectMeta: metav1.ObjectMeta{Namespace: r.PoolsNamespace, Name: p.Name},
 			}}
 	}

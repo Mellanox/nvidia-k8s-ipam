@@ -26,6 +26,7 @@ rules:
       - nv-ipam.nvidia.com
     resources:
       - ippools
+      - cidrpools
     verbs:
       - get
       - list
@@ -35,6 +36,7 @@ rules:
       - nv-ipam.nvidia.com
     resources:
       - ippools/status
+      - cidrpools/status
     verbs:
       - get
       - update

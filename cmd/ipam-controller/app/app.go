@@ -44,7 +44,8 @@ import (
 	ipamv1alpha1 "github.com/Mellanox/nvidia-k8s-ipam/api/v1alpha1"
 	"github.com/Mellanox/nvidia-k8s-ipam/cmd/ipam-controller/app/options"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
-	poolctrl "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/controllers/ippool"
+	cidrpoolctrl "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/controllers/cidrpool"
+	ippoolctrl "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/controllers/ippool"
 	nodectrl "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/controllers/node"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/migrator"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/version"
@@ -150,14 +151,16 @@ func RunController(ctx context.Context, config *rest.Config, opts *options.Optio
 		os.Exit(1)
 	}
 
-	nodeEventCH := make(chan event.GenericEvent, 1)
+	ipPoolNodeEventCH := make(chan event.GenericEvent, 1)
+	cidrPoolNodeEventCH := make(chan event.GenericEvent, 1)
 
 	if err = (&nodectrl.NodeReconciler{
-		NodeEventCh:    nodeEventCH,
-		MigrationCh:    migrationChan,
-		PoolsNamespace: opts.IPPoolsNamespace,
-		Client:         mgr.GetClient(),
-		Scheme:         mgr.GetScheme(),
+		IPPoolNodeEventCH:   ipPoolNodeEventCH,
+		CIDRPoolNodeEventCH: cidrPoolNodeEventCH,
+		MigrationCh:         migrationChan,
+		PoolsNamespace:      opts.IPPoolsNamespace,
+		Client:              mgr.GetClient(),
+		Scheme:              mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		logger.Error(err, "unable to create controller", "controller", "Node")
 		return err
@@ -168,16 +171,29 @@ func RunController(ctx context.Context, config *rest.Config, opts *options.Optio
 			logger.Error(err, "unable to create webhook", "webhook", "IPPool")
 			os.Exit(1)
 		}
+		if err = (&ipamv1alpha1.CIDRPool{}).SetupWebhookWithManager(mgr); err != nil {
+			logger.Error(err, "unable to create webhook", "webhook", "CIDRPool")
+			os.Exit(1)
+		}
 	}
-
-	if err = (&poolctrl.IPPoolReconciler{
-		NodeEventCh:    nodeEventCH,
+	if err = (&ippoolctrl.IPPoolReconciler{
+		NodeEventCh:    ipPoolNodeEventCH,
 		PoolsNamespace: opts.IPPoolsNamespace,
 		Client:         mgr.GetClient(),
 		Scheme:         mgr.GetScheme(),
 		MigrationCh:    migrationChan,
 	}).SetupWithManager(mgr); err != nil {
 		logger.Error(err, "unable to create controller", "controller", "IPPool")
+		return err
+	}
+
+	if err = (&cidrpoolctrl.CIDRPoolReconciler{
+		NodeEventCh:    cidrPoolNodeEventCH,
+		PoolsNamespace: opts.IPPoolsNamespace,
+		Client:         mgr.GetClient(),
+		Scheme:         mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		logger.Error(err, "unable to create controller", "controller", "CIDRPool")
 		return err
 	}
 
