@@ -86,7 +86,7 @@ func updateNode(node *corev1.Node) *corev1.Node {
 	return node
 }
 
-func getRangeFromNode(nodeName string) map[string]*pool.IPPool {
+func getRangeFromNode(nodeName string) map[string]*pool.Pool {
 	node := getNode(nodeName)
 	poolCfg, err := pool.NewConfigReader(node)
 	if err != nil {
@@ -111,7 +111,7 @@ var _ = Describe("Controller Migrator", func() {
 
 		By("Set annotation with valid ranges for node1")
 		node1 := createNode(testNode1)
-		node1InitialRanges := map[string]*pool.IPPool{pool1Name: {
+		node1InitialRanges := map[string]*pool.Pool{pool1Name: {
 			Name:    pool1Name,
 			Subnet:  "192.168.0.0/16",
 			StartIP: "192.168.0.11",
@@ -129,7 +129,7 @@ var _ = Describe("Controller Migrator", func() {
 
 		By("Set annotation with valid ranges for node2")
 		node2 := createNode(testNode2)
-		node2InitialRanges := map[string]*pool.IPPool{pool1Name: {
+		node2InitialRanges := map[string]*pool.Pool{pool1Name: {
 			Name:    pool1Name,
 			Subnet:  "192.168.0.0/16",
 			StartIP: "192.168.0.21",

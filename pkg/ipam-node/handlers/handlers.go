@@ -29,7 +29,7 @@ import (
 )
 
 type GetAllocatorFunc = func(s *allocator.RangeSet, exclusions *allocator.RangeSet,
-	poolName string, session storePkg.Session) allocator.IPAllocator
+	poolKey string, session storePkg.Session) allocator.IPAllocator
 
 // New create and initialize new instance of grpc Handlers
 func New(poolConfReader poolPkg.ConfigReader, store storePkg.Store, getAllocFunc GetAllocatorFunc) *Handlers {

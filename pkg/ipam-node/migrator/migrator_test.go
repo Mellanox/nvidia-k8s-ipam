@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/klog/v2"
 
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/migrator"
 	storePkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/store"
 )
@@ -84,10 +85,10 @@ var _ = Describe("Migrator", func() {
 		defer session.Cancel()
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(session.GetLastReservedIP(testPool1)).NotTo(BeNil())
-		Expect(session.GetLastReservedIP(testPool2)).NotTo(BeNil())
+		Expect(session.GetLastReservedIP(common.GetPoolKey(testPool1, common.PoolTypeIPPool))).NotTo(BeNil())
+		Expect(session.GetLastReservedIP(common.GetPoolKey(testPool2, common.PoolTypeIPPool))).NotTo(BeNil())
 
-		reservationPool1 := session.GetReservationByID(testPool1, testID1, testIF1)
+		reservationPool1 := session.GetReservationByID(common.GetPoolKey(testPool1, common.PoolTypeIPPool), testID1, testIF1)
 		Expect(reservationPool1).NotTo(BeNil())
 		Expect(reservationPool1.ContainerID).To(Equal(testID1))
 		Expect(reservationPool1.InterfaceName).To(Equal(testIF1))
@@ -96,7 +97,7 @@ var _ = Describe("Migrator", func() {
 		Expect(reservationPool1.Metadata.PodNamespace).To(Equal(migrator.PlaceholderForUnknownField))
 		Expect(reservationPool1.Metadata.PodUUID).To(Equal(migrator.PlaceholderForUnknownField))
 
-		reservationPool2 := session.GetReservationByID(testPool2, testID1, testIF2)
+		reservationPool2 := session.GetReservationByID(common.GetPoolKey(testPool2, common.PoolTypeIPPool), testID1, testIF2)
 		Expect(reservationPool2).NotTo(BeNil())
 
 		// check that host local store is removed

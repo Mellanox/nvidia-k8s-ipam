@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ipamv1alpha1 "github.com/Mellanox/nvidia-k8s-ipam/api/v1alpha1"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/config"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
 )
@@ -196,7 +197,7 @@ func updateAllocations(ctx context.Context, c client.Client,
 				continue
 			}
 			nodesToClearAnnotation.Insert(node.Name)
-			nodeIPPoolConfig := poolCfg.GetPoolByName(poolName)
+			nodeIPPoolConfig := poolCfg.GetPoolByKey(common.GetPoolKey(poolName, common.PoolTypeIPPool))
 			if nodeIPPoolConfig == nil {
 				nodeLog.Info("skip loading data for pool from the node, pool not configured", "node", node.Name, "pool", poolName)
 				continue

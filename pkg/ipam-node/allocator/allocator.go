@@ -41,17 +41,17 @@ type IPAllocator interface {
 type allocator struct {
 	rangeSet   *RangeSet
 	session    storePkg.Session
-	poolName   string
+	poolKey    string
 	exclusions *RangeSet
 }
 
 // NewIPAllocator create and initialize a new instance of IP allocator
 func NewIPAllocator(s *RangeSet, exclusions *RangeSet,
-	poolName string, session storePkg.Session) IPAllocator {
+	poolKey string, session storePkg.Session) IPAllocator {
 	return &allocator{
 		rangeSet:   s,
 		session:    session,
-		poolName:   poolName,
+		poolKey:    poolKey,
 		exclusions: exclusions,
 	}
 }
@@ -70,7 +70,7 @@ func (a *allocator) Allocate(id string, ifName string, meta types.ReservationMet
 		if a.exclusions != nil && a.exclusions.Contains(reservedIP.IP) {
 			continue
 		}
-		err := a.session.Reserve(a.poolName, id, ifName, meta, reservedIP.IP)
+		err := a.session.Reserve(a.poolKey, id, ifName, meta, reservedIP.IP)
 		if err == nil {
 			break
 		}
@@ -111,7 +111,7 @@ func (a *allocator) getIter() *RangeIter {
 
 	// We might get a last reserved IP that is wrong if the range indexes changed.
 	// This is not critical, we just lose round-robin this one time.
-	lastReservedIP := a.session.GetLastReservedIP(a.poolName)
+	lastReservedIP := a.session.GetLastReservedIP(a.poolKey)
 	if lastReservedIP != nil {
 		startFromLastReservedIP = a.rangeSet.Contains(lastReservedIP)
 	}

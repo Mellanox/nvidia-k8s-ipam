@@ -62,7 +62,7 @@ var _ = Describe("pool tests", func() {
 		})
 	})
 
-	Context("GetPoolByName()", func() {
+	Context("GetPoolByKey()", func() {
 		var r pool.ConfigReader
 
 		BeforeEach(func() {
@@ -79,12 +79,12 @@ var _ = Describe("pool tests", func() {
 		})
 
 		It("returns nil if pool does not exist", func() {
-			p := r.GetPoolByName("non-existent-pool")
+			p := r.GetPoolByKey("non-existent-key")
 			Expect(p).To(BeNil())
 		})
 
 		It("returns pool if exists", func() {
-			p := r.GetPoolByName("my-pool")
+			p := r.GetPoolByKey("my-pool")
 			Expect(p).ToNot(BeNil())
 			Expect(p.Subnet).To(Equal("192.168.0.0/16"))
 		})

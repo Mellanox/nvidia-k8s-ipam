@@ -71,7 +71,7 @@ type cleaner struct {
 }
 
 func (c *cleaner) Start(ctx context.Context) {
-	logger := logr.FromContextOrDiscard(ctx).WithName("cleaner")
+	logger := logr.FromContextOrDiscard(ctx)
 	for {
 		loopLogger := logger.WithValues("checkID", uuid.NewString())
 		loopLogger.Info("check for stale IPs")
@@ -96,17 +96,17 @@ func (c *cleaner) loop(ctx context.Context) error {
 	}
 	allReservations := map[string]struct{}{}
 	emptyPools := []string{}
-	for _, poolName := range session.ListPools() {
-		poolReservations := session.ListReservations(poolName)
+	for _, poolKey := range session.ListPools() {
+		poolReservations := session.ListReservations(poolKey)
 		if len(poolReservations) == 0 {
-			emptyPools = append(emptyPools, poolName)
+			emptyPools = append(emptyPools, poolKey)
 			continue
 		}
 		for _, reservation := range poolReservations {
-			resLogger := logger.WithValues("pool", poolName,
+			resLogger := logger.WithValues("poolKey", poolKey,
 				"container_id", reservation.ContainerID, "interface_name", reservation.InterfaceName)
-			key := c.getStaleAllocKey(poolName, reservation)
-			allReservations[key] = struct{}{}
+			staleAllocKey := c.getStaleAllocKey(poolKey, reservation)
+			allReservations[staleAllocKey] = struct{}{}
 			if reservation.Metadata.PodName == "" || reservation.Metadata.PodNamespace == "" {
 				resLogger.V(2).Info("reservation has no required metadata fields, skip")
 				continue
@@ -128,10 +128,10 @@ func (c *cleaner) loop(ctx context.Context) error {
 				}
 			}
 			if found {
-				delete(c.staleAllocations, key)
+				delete(c.staleAllocations, staleAllocKey)
 			} else {
-				c.staleAllocations[key]++
-				resLogger.V(2).Info("pod not found, increase stale counter", "value", c.staleAllocations[key])
+				c.staleAllocations[staleAllocKey]++
+				resLogger.V(2).Info("pod not found, increase stale counter", "value", c.staleAllocations[staleAllocKey])
 			}
 		}
 	}
@@ -145,15 +145,15 @@ func (c *cleaner) loop(ctx context.Context) error {
 		// release reservations which were marked as stale multiple times
 		if count > c.checkCountBeforeRelease {
 			keyFields := strings.SplitN(k, "|", 3)
-			poolName, containerID, ifName := keyFields[0], keyFields[1], keyFields[2]
-			logger.Info("stale reservation released", "poolName", poolName,
+			poolKey, containerID, ifName := keyFields[0], keyFields[1], keyFields[2]
+			logger.Info("stale reservation released", "poolKey", poolKey,
 				"container_id", containerID, "interface_name", ifName)
-			session.ReleaseReservationByID(poolName, containerID, ifName)
+			session.ReleaseReservationByID(poolKey, containerID, ifName)
 		}
 	}
 	// remove empty pools if they don't have configuration in the k8s API
 	for _, emptyPool := range emptyPools {
-		if p := c.poolConfReader.GetPoolByName(emptyPool); p == nil {
+		if p := c.poolConfReader.GetPoolByKey(emptyPool); p == nil {
 			session.RemovePool(emptyPool)
 		}
 	}

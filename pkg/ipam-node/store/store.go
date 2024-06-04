@@ -55,22 +55,22 @@ type Store interface {
 type Session interface {
 	// Reserve reserves IP for the id and interface name,
 	// returns error if allocation failed
-	Reserve(pool string, id string, ifName string, meta types.ReservationMetadata, address net.IP) error
+	Reserve(poolKey string, id string, ifName string, meta types.ReservationMetadata, address net.IP) error
 	// ListReservations list all reservations in the pool
-	ListReservations(pool string) []types.Reservation
+	ListReservations(poolKey string) []types.Reservation
 	// ListPools return list with names of all known pools
 	ListPools() []string
 	// RemovePool removes information about the pool from the store
-	RemovePool(pool string)
+	RemovePool(poolKey string)
 	// GetLastReservedIP returns last reserved IP for the pool or nil
-	GetLastReservedIP(pool string) net.IP
+	GetLastReservedIP(poolKey string) net.IP
 	// SetLastReservedIP set last reserved IP fot the pool
-	SetLastReservedIP(pool string, ip net.IP)
+	SetLastReservedIP(poolKey string, ip net.IP)
 	// ReleaseReservationByID releases reservation by id and interface name
-	ReleaseReservationByID(pool string, id string, ifName string)
+	ReleaseReservationByID(poolKey string, id string, ifName string)
 	// GetReservationByID returns existing reservation for id and interface name,
 	// return nil if allocation not found
-	GetReservationByID(pool string, id string, ifName string) *types.Reservation
+	GetReservationByID(poolKey string, id string, ifName string) *types.Reservation
 	// Commit writes persistedData to the disk and release the lock.
 	// the store can't be used after this call
 	Commit() error
@@ -192,10 +192,11 @@ func (s *session) checkClosed() {
 }
 
 // Reserve is the Session interface implementation for session
-func (s *session) Reserve(pool string, id string, ifName string, meta types.ReservationMetadata, address net.IP) error {
+func (s *session) Reserve(poolKey string, id string, ifName string,
+	meta types.ReservationMetadata, address net.IP) error {
 	s.checkClosed()
 	reservationKey := s.getKey(id, ifName)
-	poolData := s.getPoolData(pool, s.tmpData)
+	poolData := s.getPoolData(poolKey, s.tmpData)
 	_, exist := poolData.Entries[reservationKey]
 	if exist {
 		return ErrReservationAlreadyExist
@@ -221,26 +222,26 @@ func (s *session) Reserve(pool string, id string, ifName string, meta types.Rese
 	}
 	reservation.Metadata.CreateTime = time.Now().Format(time.RFC3339Nano)
 	poolData.Entries[reservationKey] = reservation
-	s.tmpData.Pools[pool] = *poolData
+	s.tmpData.Pools[poolKey] = *poolData
 	s.isModified = true
 	return nil
 }
 
-func (s *session) getPoolData(pool string, layout *types.Root) *types.PoolReservations {
-	res, exist := layout.Pools[pool]
+func (s *session) getPoolData(poolKey string, layout *types.Root) *types.PoolReservations {
+	res, exist := layout.Pools[poolKey]
 	if exist {
 		if res.Entries == nil {
 			res.Entries = map[string]types.Reservation{}
 		}
 		return &res
 	}
-	return types.NewPoolReservations(pool)
+	return types.NewPoolReservations(poolKey)
 }
 
 // ListReservations is the Session interface implementation for session
-func (s *session) ListReservations(pool string) []types.Reservation {
+func (s *session) ListReservations(poolKey string) []types.Reservation {
 	s.checkClosed()
-	poolData := s.getPoolData(pool, s.tmpData)
+	poolData := s.getPoolData(poolKey, s.tmpData)
 	allocations := make([]types.Reservation, 0, len(poolData.Entries))
 	for _, a := range poolData.Entries {
 		allocations = append(allocations, a)
@@ -259,41 +260,41 @@ func (s *session) ListPools() []string {
 }
 
 // RemovePool is the Session interface implementation for session
-func (s *session) RemovePool(pool string) {
+func (s *session) RemovePool(poolKey string) {
 	s.checkClosed()
-	delete(s.tmpData.Pools, pool)
+	delete(s.tmpData.Pools, poolKey)
 	s.isModified = true
 }
 
 // GetLastReservedIP is the Session interface implementation for session
-func (s *session) GetLastReservedIP(pool string) net.IP {
+func (s *session) GetLastReservedIP(poolKey string) net.IP {
 	s.checkClosed()
-	poolData := s.getPoolData(pool, s.tmpData)
+	poolData := s.getPoolData(poolKey, s.tmpData)
 	return poolData.LastReservedIP
 }
 
 // SetLastReservedIP is the Session interface implementation for session
-func (s *session) SetLastReservedIP(pool string, ip net.IP) {
+func (s *session) SetLastReservedIP(poolKey string, ip net.IP) {
 	s.checkClosed()
-	poolData := s.getPoolData(pool, s.tmpData)
+	poolData := s.getPoolData(poolKey, s.tmpData)
 	poolData.LastReservedIP = ip
-	s.tmpData.Pools[pool] = *poolData
+	s.tmpData.Pools[poolKey] = *poolData
 	s.isModified = true
 }
 
 // ReleaseReservationByID is the Session interface implementation for session
-func (s *session) ReleaseReservationByID(pool string, id string, ifName string) {
+func (s *session) ReleaseReservationByID(poolKey string, id string, ifName string) {
 	s.checkClosed()
-	poolData := s.getPoolData(pool, s.tmpData)
+	poolData := s.getPoolData(poolKey, s.tmpData)
 	delete(poolData.Entries, s.getKey(id, ifName))
-	s.tmpData.Pools[pool] = *poolData
+	s.tmpData.Pools[poolKey] = *poolData
 	s.isModified = true
 }
 
 // GetReservationByID is the Session interface implementation for session
-func (s *session) GetReservationByID(pool string, id string, ifName string) *types.Reservation {
+func (s *session) GetReservationByID(poolKey string, id string, ifName string) *types.Reservation {
 	s.checkClosed()
-	poolData := s.getPoolData(pool, s.tmpData)
+	poolData := s.getPoolData(poolKey, s.tmpData)
 	reservation, exist := poolData.Entries[s.getKey(id, ifName)]
 	if !exist {
 		return nil
