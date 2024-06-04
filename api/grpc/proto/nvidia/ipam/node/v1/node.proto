@@ -13,6 +13,13 @@ syntax = "proto3";
 
 package nvidia.ipam.node.v1;
 
+// indicates type of the pool which is referred by the name
+enum PoolType {
+  POOL_TYPE_UNSPECIFIED = 0;
+  POOL_TYPE_IPPOOL = 1;
+  POOL_TYPE_CIDRPOOL = 2;
+}
+
 // gRPC service definition for NVIDIA IPAM node daemon
 service IPAMService {
   // Allocate is called as a part of CMD_ADD flow.
@@ -64,6 +71,8 @@ message IPAMParameters {
   string cni_ifname = 3;
   // required, additional metadata to identify IP allocation
   IPAMMetadata metadata = 4;
+  // type of the pool which is refered by the name in the pools field
+  PoolType pool_type = 5;
 }
 
 // IPAMMetadata contains metadata for IPAM calls
@@ -104,6 +113,8 @@ message AllocationInfo {
   string ip = 2;
   // gateway for allocated IP
   string gateway = 3;
+  // type of the pool which is refered by the name in the pools field
+  PoolType pool_type = 4;
 }
 
 // IsAllocatedReply contains reply for IsAllocated rpc call
