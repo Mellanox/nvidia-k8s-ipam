@@ -40,7 +40,7 @@ func (h *Handlers) Allocate(ctx context.Context, req *nodev1.AllocateRequest) (*
 	if err := validateReq(req); err != nil {
 		return nil, err
 	}
-	params := req.Parameters
+	params := setDefaultsToParams(req.Parameters)
 	store, err := h.openStore(ctx)
 	if err != nil {
 		return nil, err
@@ -55,8 +55,9 @@ func (h *Handlers) Allocate(ctx context.Context, req *nodev1.AllocateRequest) (*
 	resp := &nodev1.AllocateResponse{}
 	for _, r := range result {
 		allocationInfo := &nodev1.AllocationInfo{
-			Pool: r.Pool,
-			Ip:   r.Address.String(),
+			Pool:     r.Pool,
+			Ip:       r.Address.String(),
+			PoolType: params.PoolType,
 		}
 		if r.Gateway != nil {
 			allocationInfo.Gateway = r.Gateway.String()
@@ -93,7 +94,8 @@ func (h *Handlers) allocate(reqLog logr.Logger,
 
 func (h *Handlers) allocateInPool(pool string, reqLog logr.Logger,
 	session storePkg.Session, params *nodev1.IPAMParameters) (PoolAlloc, error) {
-	poolLog := reqLog.WithValues("pool", pool)
+	poolType := poolTypeAsString(params.PoolType)
+	poolLog := reqLog.WithValues("pool", pool, "poolType", poolType)
 
 	poolCfg := h.poolConfReader.GetPoolByName(pool)
 	if poolCfg == nil {

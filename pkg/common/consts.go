@@ -17,3 +17,10 @@ const (
 	// IPAMName is the name of the IPAM plugin
 	IPAMName = "nvidia-k8s-ipam"
 )
+
+const (
+	// PoolTypeIPPool contains string representation for pool type of IPPool
+	PoolTypeIPPool = "ippool"
+	// PoolTypeCIDRPool contains string representation for pool type of CIDRPool
+	PoolTypeCIDRPool = "cidrpool"
+)

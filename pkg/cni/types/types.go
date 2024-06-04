@@ -21,6 +21,8 @@ import (
 	"strings"
 
 	"github.com/containernetworking/cni/pkg/types"
+
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
 )
 
 const (
@@ -52,6 +54,9 @@ type IPAMConf struct {
 
 	// PoolName is the name of the pool to be used to allocate IP
 	PoolName string `json:"poolName,omitempty"`
+	// PoolType is the type of the pool which is referred by the PoolName,
+	// supported values: ippool, cidrpool
+	PoolType string `json:"poolType,omitempty"`
 	// Address of the NVIDIA-ipam DaemonSocket
 	DaemonSocket             string `json:"daemonSocket,omitempty"`
 	DaemonCallTimeoutSeconds int    `json:"daemonCallTimeoutSeconds,omitempty"`
@@ -106,6 +111,7 @@ func (cl *confLoader) LoadConf(bytes []byte) (*NetConf, error) {
 	defaultConf := &IPAMConf{
 		// use network name as pool name by default
 		PoolName:                 n.Name,
+		PoolType:                 common.PoolTypeIPPool,
 		ConfDir:                  DefaultConfDir,
 		LogFile:                  DefaultLogFile,
 		DaemonSocket:             DefaultDaemonSocket,
@@ -117,6 +123,12 @@ func (cl *confLoader) LoadConf(bytes []byte) (*NetConf, error) {
 	n.IPAM.Pools, err = parsePoolName(n.IPAM.PoolName)
 	if err != nil {
 		return nil, err
+	}
+
+	n.IPAM.PoolType = strings.ToLower(n.IPAM.PoolType)
+	if n.IPAM.PoolType != common.PoolTypeIPPool && n.IPAM.PoolType != common.PoolTypeCIDRPool {
+		return nil, fmt.Errorf("unsupported poolType %s, supported values: %s, %s",
+			n.IPAM.PoolType, common.PoolTypeIPPool, common.PoolTypeCIDRPool)
 	}
 
 	return n, nil
@@ -168,6 +180,10 @@ func (cl *confLoader) overlayConf(from, to *IPAMConf) {
 
 	if to.PoolName == "" {
 		to.PoolName = from.PoolName
+	}
+
+	if to.PoolType == "" {
+		to.PoolType = from.PoolType
 	}
 
 	if to.DaemonSocket == "" {

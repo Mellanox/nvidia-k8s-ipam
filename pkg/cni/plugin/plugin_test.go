@@ -84,6 +84,7 @@ var _ = Describe("plugin tests", func() {
 			mockDaemonClient.On("Allocate", mock.Anything, &nodev1.AllocateRequest{
 				Parameters: &nodev1.IPAMParameters{
 					Pools:          []string{"my-pool"},
+					PoolType:       nodev1.PoolType_POOL_TYPE_IPPOOL,
 					CniIfname:      "net1",
 					CniContainerid: "1234",
 					Metadata: &nodev1.IPAMMetadata{
@@ -92,9 +93,10 @@ var _ = Describe("plugin tests", func() {
 					},
 				}}).Return(&nodev1.AllocateResponse{
 				Allocations: []*nodev1.AllocationInfo{{
-					Pool:    "my-pool",
-					Ip:      "192.168.1.10/24",
-					Gateway: "192.168.1.1",
+					Pool:     "my-pool",
+					Ip:       "192.168.1.10/24",
+					Gateway:  "192.168.1.1",
+					PoolType: nodev1.PoolType_POOL_TYPE_IPPOOL,
 				}},
 			}, nil)
 			err := p.CmdAdd(args)

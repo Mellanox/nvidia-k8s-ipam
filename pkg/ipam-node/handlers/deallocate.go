@@ -29,7 +29,7 @@ func (h *Handlers) Deallocate(
 	if err := validateReq(req); err != nil {
 		return nil, err
 	}
-	params := req.Parameters
+	params := setDefaultsToParams(req.Parameters)
 	store, err := h.openStore(ctx)
 	if err != nil {
 		return nil, err

@@ -28,6 +28,7 @@ import (
 
 	nodev1 "github.com/Mellanox/nvidia-k8s-ipam/api/grpc/nvidia/ipam/node/v1"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/cni/types"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/version"
 )
 
@@ -197,8 +198,14 @@ func cniConfToGRPCReq(conf *types.NetConf, args *skel.CmdArgs) (*nodev1.IPAMPara
 	if err != nil {
 		return nil, fmt.Errorf("failed to load extra CNI args: %v", err)
 	}
+
+	poolType := nodev1.PoolType_POOL_TYPE_IPPOOL
+	if conf.IPAM.PoolType == common.PoolTypeCIDRPool {
+		poolType = nodev1.PoolType_POOL_TYPE_CIDRPOOL
+	}
 	req := &nodev1.IPAMParameters{
 		Pools:          conf.IPAM.Pools,
+		PoolType:       poolType,
 		CniIfname:      args.IfName,
 		CniContainerid: args.ContainerID,
 		Metadata: &nodev1.IPAMMetadata{
