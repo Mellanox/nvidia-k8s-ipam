@@ -74,7 +74,7 @@ func (r *Range) Canonicalize() error {
 			return fmt.Errorf("RangeStart %s not in network %s", r.RangeStart.String(), (*net.IPNet)(&r.Subnet).String())
 		}
 	} else {
-		if isPointToPoint(r.Subnet) {
+		if ip.IsPointToPointSubnet((*net.IPNet)(&r.Subnet)) {
 			r.RangeStart = r.Subnet.IP
 		} else {
 			r.RangeStart = ip.NextIP(r.Subnet.IP)
@@ -95,7 +95,7 @@ func (r *Range) Canonicalize() error {
 			return fmt.Errorf("RangeEnd %s not in network %s", r.RangeEnd.String(), (*net.IPNet)(&r.Subnet).String())
 		}
 	} else {
-		r.RangeEnd = lastIP(r.Subnet)
+		r.RangeEnd = ip.LastIP((*net.IPNet)(&r.Subnet))
 	}
 
 	return nil
@@ -161,23 +161,4 @@ func CanonicalizeIP(addr *net.IP) error {
 	}
 	*addr = normalizedIP
 	return nil
-}
-
-// Returns true if IPNet is point to point (/31 or /127)
-func isPointToPoint(subnet types.IPNet) bool {
-	ones, maskLen := subnet.Mask.Size()
-	return ones == maskLen-1
-}
-
-// Determine the last IP of a subnet, excluding the broadcast if IPv4 (if not /31 net)
-func lastIP(subnet types.IPNet) net.IP {
-	var end net.IP
-	for i := 0; i < len(subnet.IP); i++ {
-		end = append(end, subnet.IP[i]|^subnet.Mask[i])
-	}
-	if subnet.IP.To4() != nil && !isPointToPoint(subnet) {
-		end[3]--
-	}
-
-	return end
 }

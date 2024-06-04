@@ -27,7 +27,6 @@ import (
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 
 	nodev1 "github.com/Mellanox/nvidia-k8s-ipam/api/grpc/nvidia/ipam/node/v1"
@@ -44,7 +43,7 @@ const (
 	testNamespace = "default"
 )
 
-func createTestPools() {
+func createTestIPPools() {
 	pool1 := &ipamv1alpha1.IPPool{
 		ObjectMeta: metav1.ObjectMeta{Name: testPoolName1, Namespace: testNamespace},
 		Spec: ipamv1alpha1.IPPoolSpec{
@@ -54,6 +53,15 @@ func createTestPools() {
 		},
 	}
 	ExpectWithOffset(1, k8sClient.Create(ctx, pool1))
+	pool1.Status = ipamv1alpha1.IPPoolStatus{
+		Allocations: []ipamv1alpha1.Allocation{
+			{
+				NodeName: testNodeName,
+				StartIP:  "192.168.0.2",
+				EndIP:    "192.168.0.254",
+			},
+		}}
+	ExpectWithOffset(1, k8sClient.Status().Update(ctx, pool1))
 
 	pool2 := &ipamv1alpha1.IPPool{
 		ObjectMeta: metav1.ObjectMeta{Name: testPoolName2, Namespace: testNamespace},
@@ -64,47 +72,57 @@ func createTestPools() {
 		},
 	}
 	ExpectWithOffset(1, k8sClient.Create(ctx, pool2))
-
-	// Update statuses with range allocation
-	Eventually(func(g Gomega) error {
-		status := ipamv1alpha1.IPPoolStatus{
-			Allocations: []ipamv1alpha1.Allocation{
-				{
-					NodeName: testNodeName,
-					StartIP:  "192.168.0.2",
-					EndIP:    "192.168.0.254",
-				},
+	pool2.Status = ipamv1alpha1.IPPoolStatus{
+		Allocations: []ipamv1alpha1.Allocation{
+			{
+				NodeName: testNodeName,
+				StartIP:  "10.100.0.2",
+				EndIP:    "10.100.0.254",
 			},
-		}
-		return updatePoolStatus(testPoolName1, status)
-	}, 30, 5).Should(Not(HaveOccurred()))
-
-	Eventually(func(g Gomega) error {
-		status := ipamv1alpha1.IPPoolStatus{
-			Allocations: []ipamv1alpha1.Allocation{
-				{
-					NodeName: testNodeName,
-					StartIP:  "10.100.0.2",
-					EndIP:    "10.100.0.254",
-				},
-			},
-		}
-		return updatePoolStatus(testPoolName2, status)
-	}, 30, 5).Should(Not(HaveOccurred()))
+		}}
+	ExpectWithOffset(1, k8sClient.Status().Update(ctx, pool2))
 }
 
-func updatePoolStatus(poolName string, status ipamv1alpha1.IPPoolStatus) error {
-	pool := &ipamv1alpha1.IPPool{}
-	err := k8sClient.Get(ctx, types.NamespacedName{Name: poolName, Namespace: testNamespace}, pool)
-	if err != nil {
-		return err
+func createTestCIDRPools() {
+	pool1GatewayIndex := uint(1)
+	pool1 := &ipamv1alpha1.CIDRPool{
+		ObjectMeta: metav1.ObjectMeta{Name: testPoolName1, Namespace: testNamespace},
+		Spec: ipamv1alpha1.CIDRPoolSpec{
+			CIDR:                 "192.100.0.0/16",
+			GatewayIndex:         &pool1GatewayIndex,
+			PerNodeNetworkPrefix: 24,
+			Exclusions: []ipamv1alpha1.ExcludeRange{
+				{StartIP: "192.100.0.1", EndIP: "192.100.0.10"},
+			},
+		},
 	}
-	pool.Status = status
-	err = k8sClient.Status().Update(ctx, pool)
-	if err != nil {
-		return err
+	ExpectWithOffset(1, k8sClient.Create(ctx, pool1))
+	pool1.Status = ipamv1alpha1.CIDRPoolStatus{
+		Allocations: []ipamv1alpha1.CIDRPoolAllocation{
+			{
+				NodeName: testNodeName,
+				Prefix:   "192.100.0.0/24",
+				Gateway:  "192.100.0.1",
+			},
+		}}
+	ExpectWithOffset(1, k8sClient.Status().Update(ctx, pool1))
+
+	pool2 := &ipamv1alpha1.CIDRPool{
+		ObjectMeta: metav1.ObjectMeta{Name: testPoolName2, Namespace: testNamespace},
+		Spec: ipamv1alpha1.CIDRPoolSpec{
+			CIDR:                 "10.200.0.0/24",
+			PerNodeNetworkPrefix: 31,
+		},
 	}
-	return nil
+	ExpectWithOffset(1, k8sClient.Create(ctx, pool2))
+	pool2.Status = ipamv1alpha1.CIDRPoolStatus{
+		Allocations: []ipamv1alpha1.CIDRPoolAllocation{
+			{
+				NodeName: testNodeName,
+				Prefix:   "10.200.0.0/31",
+			},
+		}}
+	ExpectWithOffset(1, k8sClient.Status().Update(ctx, pool2))
 }
 
 func createTestPod() *corev1.Pod {
@@ -161,10 +179,13 @@ var _ = Describe("IPAM Node daemon", func() {
 	It("Validate main flows", func() {
 		done := make(chan interface{})
 		go func() {
+			defer GinkgoRecover()
+			defer close(done)
 			testDir := GinkgoT().TempDir()
 			opts := getOptions(testDir)
 
-			createTestPools()
+			createTestIPPools()
+			createTestCIDRPools()
 			pod := createTestPod()
 
 			ctx = logr.NewContext(ctx, klog.NewKlogr())
@@ -180,38 +201,41 @@ var _ = Describe("IPAM Node daemon", func() {
 
 			grpcClient := nodev1.NewIPAMServiceClient(conn)
 
-			params := getValidReqParams(string(pod.UID), pod.Name, pod.Namespace)
+			cidrPoolParams := getValidReqParams(string(pod.UID), pod.Name, pod.Namespace)
+			cidrPoolParams.PoolType = nodev1.PoolType_POOL_TYPE_CIDRPOOL
+			ipPoolParams := getValidReqParams(string(pod.UID), pod.Name, pod.Namespace)
 
-			// no allocation yet
-			_, err = grpcClient.IsAllocated(ctx,
-				&nodev1.IsAllocatedRequest{Parameters: params})
-			Expect(status.Code(err) == codes.NotFound).To(BeTrue())
+			for _, params := range []*nodev1.IPAMParameters{ipPoolParams, cidrPoolParams} {
+				// no allocation yet
+				_, err = grpcClient.IsAllocated(ctx,
+					&nodev1.IsAllocatedRequest{Parameters: params})
+				Expect(status.Code(err) == codes.NotFound).To(BeTrue())
 
-			// allocate
-			resp, err := grpcClient.Allocate(ctx, &nodev1.AllocateRequest{Parameters: params})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(resp.Allocations).To(HaveLen(2))
-			Expect(resp.Allocations[0].Pool).NotTo(BeEmpty())
-			Expect(resp.Allocations[0].Gateway).NotTo(BeEmpty())
-			Expect(resp.Allocations[0].Ip).NotTo(BeEmpty())
+				// allocate
+				resp, err := grpcClient.Allocate(ctx, &nodev1.AllocateRequest{Parameters: params})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.Allocations).To(HaveLen(2))
+				Expect(resp.Allocations[0].Pool).NotTo(BeEmpty())
+				Expect(resp.Allocations[0].Gateway).NotTo(BeEmpty())
+				Expect(resp.Allocations[0].Ip).NotTo(BeEmpty())
 
-			_, err = grpcClient.IsAllocated(ctx,
-				&nodev1.IsAllocatedRequest{Parameters: params})
-			Expect(err).NotTo(HaveOccurred())
+				_, err = grpcClient.IsAllocated(ctx,
+					&nodev1.IsAllocatedRequest{Parameters: params})
+				Expect(err).NotTo(HaveOccurred())
 
-			// deallocate
-			_, err = grpcClient.Deallocate(ctx, &nodev1.DeallocateRequest{Parameters: params})
-			Expect(err).NotTo(HaveOccurred())
+				// deallocate
+				_, err = grpcClient.Deallocate(ctx, &nodev1.DeallocateRequest{Parameters: params})
+				Expect(err).NotTo(HaveOccurred())
 
-			// deallocate should be idempotent
-			_, err = grpcClient.Deallocate(ctx, &nodev1.DeallocateRequest{Parameters: params})
-			Expect(err).NotTo(HaveOccurred())
+				// deallocate should be idempotent
+				_, err = grpcClient.Deallocate(ctx, &nodev1.DeallocateRequest{Parameters: params})
+				Expect(err).NotTo(HaveOccurred())
 
-			// check should fail
-			_, err = grpcClient.IsAllocated(ctx,
-				&nodev1.IsAllocatedRequest{Parameters: params})
-			Expect(status.Code(err) == codes.NotFound).To(BeTrue())
-			close(done)
+				// check should fail
+				_, err = grpcClient.IsAllocated(ctx,
+					&nodev1.IsAllocatedRequest{Parameters: params})
+				Expect(status.Code(err) == codes.NotFound).To(BeTrue())
+			}
 		}()
 		Eventually(done, 5*time.Minute).Should(BeClosed())
 	})
