@@ -11,8 +11,59 @@ An IP Address Management (IPAM) CNI plugin designed to operate in a Kubernetes e
 This Plugins allows to assign IP addresses dynamically across the cluster while keeping speed
 and performance in mind.
 
-IP subnets are defined by the user as named _IP Pools_, then for each IP Pool a unique _IP Block_ is assigned
-to each K8s Node which is used to assign IPs to container network interfaces.
+NVIDIA IPAM plugin supports allocation of IP ranges and Network prefixes for nodes.
+
+* [IPPool CR](#ippool-cr) can be used to create an IP Pool. This type of pool can be used to split a single IP network into multiple unique IP ranges and allocate them for nodes. The nodes will use the same network mask as the original IP network.
+
+  This pool type is useful for flat networks where Pods from all nodes have L2 connectivity with each other.
+
+  **Example:**
+	```
+  network: 192.168.0.0/16
+  gateway: 192.168.0.1
+  perNodeBlockSize: 4 (amount of IPs)
+
+  node1 will allocate IPs from the following range: 192.168.0.1-192.168.0.4 (gateway is part of the range)
+
+  node2 will allocate IPs from the following range: 192.168.0.5-192.168.0.8
+
+	First Pod on the node1 will get the following IP config:
+		IP: 192.168.0.2/16 (gateway IP was skipped)
+		Gateway: 192.168.0.1
+
+	First Pod on the node2 will get the following IP config:
+		IP: 192.168.0.5/16
+		Gateway: 192.168.0.1
+
+  Pods from different nodes can have L2 connectivity.
+  ```
+
+
+* [CIDRPool CR](#cidrpool-cr) can be used to create a CIDR Pool. This type of pool can be used to split a large network into multiple unique smaller subnets and allocate them for nodes. Each node will have a specific gateway and network mask with a node's subnet size.
+
+   This pool type is useful for routed networks where Pods on each node should use unique subnets and node-specific gateways to communicate with Pods from other nodes.
+
+  **Example:**
+	```
+  cidr: 192.168.0.0/16
+  perNodeNetworkPrefix: 24 (subnet size)
+  gatewayIndex: 1
+
+  node1 will allocate IPs from the following subnet: 192.168.0.0/24
+
+  node2 will allocate IPs from the following subnet: 192.168.1.0/24
+
+	First Pod on the node1 will get the following IP config:
+		IP: 192.168.0.2/24
+		Gateway: 192.168.0.1
+
+	First Pod on the node2 will get the following IP config:
+		IP: 192.168.1.2/24
+		Gateway: 192.168.1.1
+
+  Pods from different nodes don't have L2 connectivity, routing is required.
+  ```
+
 
 NVIDIA IPAM plugin currently support only IP allocation for K8s Secondary Networks.
 e.g Additional networks provided by [multus CNI plugin](https://github.com/k8snetworkplumbingwg/multus-cni).
@@ -29,13 +80,13 @@ NVIDIA IPAM plugin consists of 3 main components:
 
 ### ipam-controller
 
-A Kubernetes(K8s) controller that Watches on IPPools CRs in a predefined Namespace.
-It then proceeds by assiging each node via IPPools Status a cluster unique range of IPs of the defined IP Pools.
+A Kubernetes(K8s) controller that Watches on IPPools and CIDRPools CRs in a predefined Namespace.
+It then proceeds by assiging each node via CR's Status a cluster unique range of IPs or subnet that is used by the ipam-node. 
 
 #### Validation webhook
 
-ipam-controller implements validation webhook for IPPool resource.
-The webhook can prevent the creation of IPPool resources with invalid configurations. 
+ipam-controller implements validation webhook for IPPool and CIDRPool resources.
+The webhook can prevent the creation of resources with invalid configurations. 
 Supported X.509 certificate management system should be available in the cluster to enable the webhook.
 Currently supported systems are [certmanager](https://cert-manager.io/) and
 [Openshift certificate management](https://docs.openshift.com/container-platform/4.13/security/certificates/service-serving-certificate.html)
@@ -50,9 +101,10 @@ The daemon is responsible for:
 - run periodic jobs, such as cleanup of the stale IP address allocations
 
 A node daemon provides GRPC service, which nv-ipam CNI plugin uses to request IP address allocation/deallocation.
-IPs are allocated from the provided IP Block assigned by ipam-controller for the node.
-To determine the cluster unique IP Block for the defined IP Pool, ipam-node watches K8s API
-for the IPPool objects and extracts IP Block information from IPPool Status.
+
+IPs are allocated from the provided IP Blocks and prefixes assigned by ipam-controller for the node.
+ipam-node watches K8s API
+for the IPPool and CIDRPool objects and extracts allocated ranges or prefixes from the status field.
 
 ### nv-ipam
 
@@ -60,6 +112,8 @@ An IPAM CNI plugin that handles CNI requests according to the CNI spec.
 To allocate/deallocate IP address nv-ipam calls GRPC API of ipam-node daemon.
 
 ### IP allocation flow
+
+#### IPPool
 
 1. User (cluster administrator) defines a set of named IP Pools to be used for IP allocation
 of container interfaces via IPPool CRD (more information in [Configuration](#configuration) section)
@@ -138,6 +192,81 @@ _Example macvlan CNI configuration_:
 
 4. nv-ipam plugin, as a result of CNI ADD command allocates a free IP from the IP Block of the
 corresponding IP Pool that was allocated for the node
+
+#### CIDRPool
+
+1. User (cluster administrator) defines a set of named CIDR Pools to be used for prefix allocation
+of container interfaces via CIDRPool CRD (more information in [Configuration](#configuration) section)
+
+_Example_:
+
+```yaml
+apiVersion: nv-ipam.nvidia.com/v1alpha1
+kind: CIDRPool
+metadata:
+  name: pool1
+  namespace: kube-system
+spec:
+  cidr: 192.168.0.0/16
+  gatewayIndex: 1
+  perNodeNetworkPrefix: 24
+  nodeSelector:
+    nodeSelectorTerms:
+    - matchExpressions:
+      - key: node-role.kubernetes.io/worker
+        operator: Exists
+
+```
+
+2. ipam-controller calculates and assigns unique subnets (with `perNodeNetworkPrefix` size) for each Node via CIDRPool Status:
+
+_Example_:
+
+```yaml
+apiVersion: nv-ipam.nvidia.com/v1alpha1
+kind: CIDRPool
+metadata:
+  name: pool1
+  namespace: kube-system
+spec:
+  cidr: 192.168.0.0/16
+  gatewayIndex: 1
+  perNodeNetworkPrefix: 24
+  nodeSelector:
+    nodeSelectorTerms:
+    - matchExpressions:
+      - key: node-role.kubernetes.io/worker
+        operator: Exists
+status:
+  allocations:
+  - gateway: 192.168.0.1
+    nodeName: host-a
+    prefix: 192.168.0.0/24
+  - gateway: 192.168.1.1
+    nodeName: host-b
+    prefix: 192.168.1.0/24
+
+```
+
+3. User specifies nv-ipam as IPAM plugin in CNI configuration
+
+_Example macvlan CNI configuration_:
+
+```json
+{
+  "type": "macvlan",
+  "cniVersion": "0.3.1",
+  "master": "enp3s0f0np0",
+  "mode": "bridge",
+  "ipam": {
+      "type": "nv-ipam",
+      "poolName": "pool1",
+      "poolType": "cidrpool"
+    }
+}
+```
+
+4. nv-ipam plugin, as a result of CNI ADD command allocates a free IP from the prefix that was allocated for the node
 
 ## Configuration
 
@@ -239,17 +368,111 @@ spec:
           operator: Exists
 ```
 
-* `spec`: contains the IP pool configuration
-  * `subnet`: IP Subnet of the pool
-  * `gateway`: Gateway IP of the subnet
+##### Fields
+
+* `spec`: contains the IP pool configuration.
+  * `subnet`: IP Subnet of the pool.
+  * `gateway` (optional): Gateway IP of the subnet.
   * `perNodeBlockSize`: the number of IPs of IP Blocks allocated to Nodes.
-  * `nodeSelector`: A list of node selector terms. The terms are ORed. Each term can have a list of matchExpressions that are ANDed. Only the nodes that match the provided labels will get assigned IP Blocks for the defined pool.
+  * `nodeSelector` (optional): A list of node selector terms. The terms are ORed. Each term can have a list of matchExpressions that are ANDed. Only the nodes that match the provided labels will get assigned IP Blocks for the defined pool.
 
 > __Notes:__
 >
-> * pool name is composed of alphanumeric letters separated by dots(`.`) underscores(`_`) or hyphens(`-`)
-> * `perNodeBlockSize` minimum size is 2
-> * `subnet` must be large enough to accommodate at least one `perNodeBlockSize` block of IPs
+> * pool name is composed of alphanumeric letters separated by dots(`.`) underscores(`_`) or hyphens(`-`).
+> * `perNodeBlockSize` minimum size is 2.
+> * `subnet` must be large enough to accommodate at least one `perNodeBlockSize` block of IPs.
+
+
+
+#### CIDRPool CR
+
+ipam-controller accepts CIDR Pools configuration via CIDRPool CRs.
+Multiple CIDRPool CRs can be created, with different NodeSelectors.
+
+##### IPv4 example
+
+```yaml
+apiVersion: nv-ipam.nvidia.com/v1alpha1
+kind: CIDRPool
+metadata:
+  name: pool1
+  namespace: kube-system
+spec:
+  cidr: 192.168.0.0/16
+  gatewayIndex: 1
+  perNodeNetworkPrefix: 24
+  exclusions: # optional
+    - startIP: 192.168.0.10
+      endIP: 192.168.0.20
+  staticAllocations:
+    - nodeName: node-33
+      prefix: 192.168.33.0/24
+      gateway: 192.168.33.10
+    - prefix: 192.168.1.0/24
+  nodeSelector: # optional
+    nodeSelectorTerms:
+      - matchExpressions:
+          - key: node-role.kubernetes.io/worker
+            operator: Exists
+```
+
+##### IPv6 example
+
+```yaml
+apiVersion: nv-ipam.nvidia.com/v1alpha1
+kind: CIDRPool
+metadata:
+  name: pool1
+  namespace: kube-system
+spec:
+  cidr: fd52:2eb5:44::/48
+  gatewayIndex: 1
+  perNodeNetworkPrefix: 120
+  nodeSelector: # optional
+    nodeSelectorTerms:
+      - matchExpressions:
+          - key: node-role.kubernetes.io/worker
+            operator: Exists
+
+```
+
+##### Point to point prefixes
+
+```yaml
+apiVersion: nv-ipam.nvidia.com/v1alpha1
+kind: CIDRPool
+metadata:
+  name: pool1
+  namespace: kube-system
+spec:
+  cidr: 192.168.100.0/24
+  perNodeNetworkPrefix: 31
+```
+
+##### Fields
+
+* `spec`: contains the CIDR pool configuration.
+  * `cidr`: pool's CIDR block which will be split to smaller prefixes(size is define in perNodePrefixSize) and distributed between matching nodes.
+  * `gatewayIndex` (optional): `not set` - no gateway, if set automatically use IP with this index from the host prefix as a gateway.
+  * `perNodeNetworkPrefix`:  size of the network prefix for each host, the network defined in `cidr` field will be split to multiple networks with this size.
+  * `exclusions` (optional, list): contains reserved IP addresses that should not be allocated by nv-ipam node component.
+
+      * `startIP`: start IP of the exclude range (inclusive).
+      * `endIP`:  end IP of the exclude range (inclusive).
+
+  * `staticAllocations` (optional, list): static allocations for the pool.
+
+      * `nodeName` (optional): name of the node for static allocation, can be empty in case if the prefix should be preallocated without assigning it for a specific node gateway for the node.
+      * `gateway` (optional): gateway for the node, if not set the gateway will be computed from `gatewayIndex`.
+      * `prefix`: statically allocated prefix.
+
+  * `nodeSelector`(optional): A list of node selector terms. The terms are ORed. Each term can have a list of matchExpressions that are ANDed. Only the nodes that match the provided labels will get assigned IP Blocks for the defined pool.
+
+> __Notes:__
+>
+> * pool name is composed of alphanumeric letters separated by dots(`.`) underscores(`_`) or hyphens(`-`).
+> * `perNodeNetworkPrefix` must be equal or smaller (more network bits) then the size of pool's `cidr`.
+
 
 ### ipam-node configuration
 
@@ -335,6 +558,7 @@ nv-ipam accepts the following CNI configuration:
 {
     "type": "nv-ipam",
     "poolName": "pool1,pool2",
+    "poolType": "ippool",
     "daemonSocket": "unix:///var/lib/cni/nv-ipam/daemon.sock",
     "daemonCallTimeoutSeconds": 5,
     "confDir": "/etc/cni/net.d/nv-ipam.d",
@@ -344,10 +568,11 @@ nv-ipam accepts the following CNI configuration:
 ```
 
 * `type` (string, required): CNI plugin name, MUST be `"nv-ipam"`
-* `poolName` (string, optional): name of the IP Pool to be used for IP allocation.
+* `poolName` (string, optional): name of the Pool to be used for IP allocation.
 It is possible to allocate two IPs for the interface from different pools by specifying pool names separated by coma,
 e.g. `"my-ipv4-pool,my-ipv6-pool"`. The primary intent to support multiple pools is a dual-stack use-case when an 
 interface should have two IP addresses: one IPv4 and one IPv6. (default: network name as provided in CNI call)
+* `poolType` (string, optional): type (ippool, cidrpool) of the pool which is referred by the `poolName`. The field is case-insensitive. (default: `"ippool"`)
 * `daemonSocket` (string, optional): address of GRPC server socket served by IPAM daemon
 * `daemonCallTimeoutSeconds` (integer, optional): timeout for GRPC calls to IPAM daemon
 * `confDir` (string, optional): path to configuration dir. (default: `"/etc/cni/net.d/nv-ipam.d"`)
@@ -382,57 +607,15 @@ kubectl kustomize https://github.com/mellanox/nvidia-k8s-ipam/deploy/overlays/ce
 kubectl kustomize https://github.com/mellanox/nvidia-k8s-ipam/deploy/overlays/openshift?ref=main | kubectl apply -f -
 ```
 
-### Create IPPool CR
-
-```shell
-cat <<EOF | kubectl apply -f -
-apiVersion: nv-ipam.nvidia.com/v1alpha1
-kind: IPPool
-metadata:
-  name: pool1
-  namespace: kube-system
-spec:
-  subnet: 192.168.0.0/16
-  perNodeBlockSize: 100
-  gateway: 192.168.0.1
-  nodeSelector:
-    nodeSelectorTerms:
-    - matchExpressions:
-        - key: node-role.kubernetes.io/worker
-          operator: Exists
-EOF
-```
-
-### Create CNI configuration
-
-_Example config for bridge CNI:_
-
-```shell
-cat > /etc/cni/net.d/10-mynet.conf <<EOF
-{
-    "cniVersion": "0.4.0",
-    "name": "mynet",
-    "type": "bridge",
-    "bridge": "mytestbr",
-    "isGateway": true,
-    "ipMasq": true,
-    "ipam": {
-        "type": "nv-ipam",
-        "poolName": "pool1"
-    }
-}
-EOF
-```
-
 ## Debugging
 
-View allocated IP Blocks:
+### View allocated IP Blocks for a node from IPPool:
 
 ```shell
 kubectl get ippools.nv-ipam.nvidia.com -A -o jsonpath='{range .items[*]}{.metadata.name}{"\n"} {range .status.allocations[*]}{"\t"}{.nodeName} => Start IP: {.startIP} End IP: {.endIP}{"\n"}{end}{"\n"}{end}'
 
 pool1
- 	host-a => Start IP: 192.168.0.1 End IP: 192.168.0.24
+	host-a => Start IP: 192.168.0.1 End IP: 192.168.0.24
 	host-b => Start IP: 192.168.0.25 End IP: 192.168.0.48
 	host-c => Start IP: 192.168.0.49 End IP: 192.168.0.72
 	k8s-master => Start IP: 192.168.0.73 End IP: 192.168.0.96
@@ -444,25 +627,36 @@ pool2
 	k8s-master => Start IP: 172.16.0.151 End IP: 172.16.0.200
 ```
 
-View network status of pods:
+### View allocated IP Prefixes for a node from CIDRPool:
+
+```shell
+kubectl get cidrpools.nv-ipam.nvidia.com -A -o jsonpath='{range .items[*]}{.metadata.name}{"\n"} {range .status.allocations[*]}{"\t"}{.nodeName} => Prefix: {.prefix} Gateway: {.gateway}{"\n"}{end}{"\n"}{end}'
+
+pool1
+	host-a => Prefix: 10.0.0.0/24 Gateway: 10.0.0.1
+	host-b => Prefix: 10.0.1.0/24 Gateway: 10.0.2.1
+
+```
+
+### View network status of pods:
 
 ```shell
 kubectl get pods -o=custom-columns='NAME:metadata.name,NODE:spec.nodeName,NETWORK-STATUS:metadata.annotations.k8s\.v1\.cni\.cncf\.io/network-status'
 ```
 
-View ipam-controller logs:
+### View ipam-controller logs:
 
 ```shell
 kubectl -n kube-system logs <nv-ipam-controller pod name>
 ```
 
-View ipam-node logs:
+### View ipam-node logs:
 
 ```shell
 kubectl -n kube-system logs <nv-ipam-node-ds pod name>
 ```
 
-View nv-ipam CNI logs:
+### View nv-ipam CNI logs:
 
 ```shell
 cat /var/log/nv-ipam-cni.log
@@ -476,7 +670,6 @@ cat /var/log/nv-ipam-cni.log
 
 * Before removing a node from cluster, drain all workloads to ensure proper cleanup of IPs on node.
 * IP Block allocated to a node with Gateway IP in its range will have one less IP than what defined in perNodeBlockSize, deployers should take this into account.
-* Defining multiple IP Pools while supported, was not thoroughly testing
 
 ## Contributing
 
