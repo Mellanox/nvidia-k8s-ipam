@@ -16,10 +16,12 @@ package types
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
 
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
@@ -44,8 +46,8 @@ const (
 //
 //go:generate mockery --name ConfLoader
 type ConfLoader interface {
-	// LoadConf loads CNI configuration from Json data
-	LoadConf(bytes []byte) (*NetConf, error)
+	// LoadConf loads configuration from CNI CmdArgs
+	LoadConf(args *skel.CmdArgs) (*NetConf, error)
 }
 
 // IPAMConf is the configuration supported by our CNI plugin
@@ -65,15 +67,44 @@ type IPAMConf struct {
 	LogLevel                 string `json:"logLevel,omitempty"`
 
 	// internal fields
+	// holds processed data from poolName field
 	Pools []string `json:"-"`
+	// k8s metadata parsed from CNI_ARGS
+	K8SMetadata struct {
+		PodName      string
+		PodNamespace string
+		PodUID       string
+	} `json:"-"`
+	// requested IPs from CNI_ARGS, args and capabilities
+	RequestedIPs []net.IP `json:"-"`
 }
 
 // NetConf is CNI network config
 type NetConf struct {
-	Name       string    `json:"name"`
-	CNIVersion string    `json:"cniVersion"`
-	IPAM       *IPAMConf `json:"ipam"`
-	DeviceID   string    `json:"deviceID"`
+	Name          string    `json:"name"`
+	CNIVersion    string    `json:"cniVersion"`
+	IPAM          *IPAMConf `json:"ipam"`
+	DeviceID      string    `json:"deviceID"`
+	RuntimeConfig struct {
+		IPs []string `json:"ips,omitempty"`
+	} `json:"runtimeConfig,omitempty"`
+	Args *struct {
+		ArgsCNI *IPAMArgs `json:"cni"`
+	} `json:"args"`
+}
+
+// IPAMArgs holds arguments from stdin args["cni"]
+type IPAMArgs struct {
+	IPs []string `json:"ips"`
+}
+
+// IPAMEnvArgs holds arguments from CNI_ARGS env variable
+type IPAMEnvArgs struct {
+	types.CommonArgs
+	IP                types.UnmarshallableString
+	K8S_POD_NAME      types.UnmarshallableString //nolint
+	K8S_POD_NAMESPACE types.UnmarshallableString //nolint
+	K8S_POD_UID       types.UnmarshallableString //nolint
 }
 
 type confLoader struct{}
@@ -83,10 +114,10 @@ func NewConfLoader() ConfLoader {
 }
 
 // LoadConf Loads NetConf from json string provided as []byte
-func (cl *confLoader) LoadConf(bytes []byte) (*NetConf, error) {
+func (cl *confLoader) LoadConf(args *skel.CmdArgs) (*NetConf, error) {
 	n := &NetConf{}
 
-	if err := json.Unmarshal(bytes, &n); err != nil {
+	if err := json.Unmarshal(args.StdinData, &n); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal configurations. %w", err)
 	}
 
@@ -120,6 +151,26 @@ func (cl *confLoader) LoadConf(bytes []byte) (*NetConf, error) {
 	}
 	cl.overlayConf(defaultConf, n.IPAM)
 
+	// static IP address priority:
+	// stdin runtimeConfig["ips"] > stdin args["cni"]["ips"] > IP argument from CNI_ARGS env variable
+	requestedIPs := n.RuntimeConfig.IPs
+	if len(requestedIPs) == 0 {
+		if n.Args != nil && n.Args.ArgsCNI != nil {
+			requestedIPs = n.Args.ArgsCNI.IPs
+		}
+	}
+	for _, v := range requestedIPs {
+		ip := parseIP(v)
+		if ip == nil {
+			return nil, fmt.Errorf("static IP request contains invalid IP address")
+		}
+		n.IPAM.RequestedIPs = append(n.IPAM.RequestedIPs, ip)
+	}
+
+	if err := cl.loadEnvCNIArgs(n, args); err != nil {
+		return nil, err
+	}
+
 	n.IPAM.Pools, err = parsePoolName(n.IPAM.PoolName)
 	if err != nil {
 		return nil, err
@@ -130,8 +181,42 @@ func (cl *confLoader) LoadConf(bytes []byte) (*NetConf, error) {
 		return nil, fmt.Errorf("unsupported poolType %s, supported values: %s, %s",
 			n.IPAM.PoolType, common.PoolTypeIPPool, common.PoolTypeCIDRPool)
 	}
-
 	return n, nil
+}
+
+// loads arguments from CNI_ARGS env variable
+func (cl *confLoader) loadEnvCNIArgs(conf *NetConf, args *skel.CmdArgs) error {
+	envArgs := &IPAMEnvArgs{}
+	err := types.LoadArgs(args.Args, envArgs)
+	if err != nil {
+		return err
+	}
+	if envArgs.K8S_POD_NAME == "" {
+		return fmt.Errorf("CNI_ARGS: K8S_POD_NAME is not provided by container runtime")
+	}
+	if envArgs.K8S_POD_NAMESPACE == "" {
+		return fmt.Errorf("CNI_ARGS: K8S_POD_NAMESPACE is not provided by container runtime")
+	}
+
+	conf.IPAM.K8SMetadata.PodName = string(envArgs.K8S_POD_NAME)
+	conf.IPAM.K8SMetadata.PodNamespace = string(envArgs.K8S_POD_NAMESPACE)
+	conf.IPAM.K8SMetadata.PodUID = string(envArgs.K8S_POD_UID)
+
+	// use IP argument from CNI_ARGS env only if IPs are not configured by other methods
+	if len(conf.IPAM.RequestedIPs) > 0 || envArgs.IP == "" {
+		return nil
+	}
+	parsedIP := parseIP(string(envArgs.IP))
+	if parsedIP == nil {
+		return fmt.Errorf("CNI_ARGS: IP argument contains invalid IP address")
+	}
+	conf.IPAM.RequestedIPs = append(conf.IPAM.RequestedIPs, parsedIP)
+	return nil
+}
+
+func parseIP(s string) net.IP {
+	s, _, _ = strings.Cut(s, "/")
+	return net.ParseIP(s)
 }
 
 func parsePoolName(poolName string) ([]string, error) {

@@ -15,9 +15,11 @@ package types_test
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path"
 
+	"github.com/containernetworking/cni/pkg/skel"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -28,6 +30,7 @@ var _ = Describe("Types Tests", func() {
 	var (
 		tmpDir      string
 		testConfDir string
+		testArgs    = "K8S_POD_NAME=test;K8S_POD_NAMESPACE=test"
 	)
 
 	BeforeEach(func() {
@@ -46,7 +49,8 @@ var _ = Describe("Types Tests", func() {
 
 			// Load config
 			testConf := fmt.Sprintf(`{"name": "my-net", "ipam": {"confDir": %q}}`, testConfDir)
-			conf, err := cniTypes.NewConfLoader().LoadConf([]byte(testConf))
+			conf, err := cniTypes.NewConfLoader().LoadConf(&skel.CmdArgs{
+				StdinData: []byte(testConf), Args: testArgs})
 
 			// Validate
 			Expect(err).ToNot(HaveOccurred())
@@ -64,7 +68,8 @@ var _ = Describe("Types Tests", func() {
 
 			// Load config
 			testConf := fmt.Sprintf(`{"name": "my-net", "ipam": {"confDir": %q}}`, testConfDir)
-			conf, err := cniTypes.NewConfLoader().LoadConf([]byte(testConf))
+			conf, err := cniTypes.NewConfLoader().LoadConf(&skel.CmdArgs{
+				StdinData: []byte(testConf), Args: testArgs})
 
 			// Validate
 			Expect(err).ToNot(HaveOccurred())
@@ -81,7 +86,8 @@ var _ = Describe("Types Tests", func() {
 
 			// Load config
 			testConf := fmt.Sprintf(`{"name": "my-net", "ipam": {"confDir": %q, "poolName": "my-pool", "logLevel": "error"}}`, testConfDir)
-			conf, err := cniTypes.NewConfLoader().LoadConf([]byte(testConf))
+			conf, err := cniTypes.NewConfLoader().LoadConf(&skel.CmdArgs{
+				StdinData: []byte(testConf), Args: testArgs})
 
 			// Validate
 			Expect(err).ToNot(HaveOccurred())
@@ -92,13 +98,65 @@ var _ = Describe("Types Tests", func() {
 		})
 
 		It("Fails if config is invalid json", func() {
-			_, err := cniTypes.NewConfLoader().LoadConf([]byte("{garbage%^&*"))
+			_, err := cniTypes.NewConfLoader().LoadConf(&skel.CmdArgs{
+				StdinData: []byte("{garbage%^&*"), Args: testArgs})
 			Expect(err).To(HaveOccurred())
 		})
 
 		It("Fails if config does not contain ipam key", func() {
-			_, err := cniTypes.NewConfLoader().LoadConf([]byte(`{"name": "my-net", "type": "sriov"}`))
+			_, err := cniTypes.NewConfLoader().LoadConf(&skel.CmdArgs{
+				StdinData: []byte(`{"name": "my-net", "type": "sriov"}`), Args: testArgs})
 			Expect(err).To(HaveOccurred())
 		})
+
+		It("Missing metadata arguments", func() {
+			// write config file
+			confData := `{"logLevel": "debug", "logFile": "some/path.log"}`
+			Expect(os.WriteFile(
+				path.Join(testConfDir, cniTypes.ConfFileName), []byte(confData), 0o644)).NotTo(HaveOccurred())
+			// Load config
+			testConf := fmt.Sprintf(`{"name": "my-net", "ipam": {"confDir": %q}}`, testConfDir)
+			_, err := cniTypes.NewConfLoader().LoadConf(&skel.CmdArgs{StdinData: []byte(testConf), Args: "K8S_POD_NAME=test"})
+			Expect(err).To(MatchError(ContainSubstring("K8S_POD_NAMESPACE")))
+			_, err = cniTypes.NewConfLoader().LoadConf(&skel.CmdArgs{
+				StdinData: []byte(testConf), Args: "K8S_POD_NAMESPACE=test"})
+			Expect(err).To(MatchError(ContainSubstring("K8S_POD_NAME")))
+		})
+		DescribeTable("Static IPs",
+			func(stdinContent string, args string, expectedValue []net.IP, isValid bool) {
+				Expect(os.WriteFile(path.Join(testConfDir, cniTypes.ConfFileName),
+					[]byte("{}"), 0o644)).NotTo(HaveOccurred())
+				stdinContent = fmt.Sprintf(stdinContent, testConfDir)
+				if args == "" {
+					args = testArgs
+				} else {
+					args = testArgs + ";" + args
+				}
+				conf, err := cniTypes.NewConfLoader().LoadConf(&skel.CmdArgs{
+					StdinData: []byte(stdinContent), Args: args})
+				if isValid {
+					Expect(err).NotTo(HaveOccurred())
+					Expect(conf.IPAM.RequestedIPs).To(Equal(expectedValue))
+				} else {
+					Expect(err).To(HaveOccurred())
+				}
+			},
+			Entry("no IPs by default", `{"name": "my-net", "ipam": {"confDir": %q}}`, "", nil, true),
+			Entry("env variable", `{"name": "my-net", "ipam": {"confDir": %q}}`,
+				"IP=192.168.1.1",
+				[]net.IP{net.ParseIP("192.168.1.1")}, true),
+			Entry("STDIN CNI args", `{"name": "my-net", 
+				"args": {"cni": {"ips": ["1.1.1.1", "2.2.2.2/24"]}}, "ipam": {"confDir": %q}}`, "",
+				[]net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("2.2.2.2")}, true),
+			Entry("STDIN RuntimeConfig", `{"name": "my-net", 
+				"runtimeConfig": {"ips": ["1.1.1.1", "2.2.2.2/24"]}, "ipam": {"confDir": %q}}`, "",
+				[]net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("2.2.2.2")}, true),
+			Entry("ipv6", `{"name": "my-net", 
+				"runtimeConfig": {"ips": ["fd52:2eb5:44::1"]}, "ipam": {"confDir": %q}}`, "",
+				[]net.IP{net.ParseIP("fd52:2eb5:44::1")}, true),
+			Entry("invalid ip", `{"name": "my-net", 
+				"runtimeConfig": {"ips": ["adfdsaf"]}, "ipam": {"confDir": %q}}`, "",
+				nil, false),
+		)
 	})
 })

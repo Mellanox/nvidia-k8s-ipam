@@ -126,7 +126,7 @@ func (p *Plugin) prepareCMD(args *skel.CmdArgs) (cmdContext, error) {
 		c   cmdContext
 		err error
 	)
-	c.Config, err = p.ConfLoader.LoadConf(args.StdinData)
+	c.Config, err = p.ConfLoader.LoadConf(args)
 	if err != nil {
 		return cmdContext{}, fmt.Errorf("failed to load config. %v", err)
 	}
@@ -136,10 +136,8 @@ func (p *Plugin) prepareCMD(args *skel.CmdArgs) (cmdContext, error) {
 	if err != nil {
 		return cmdContext{}, fmt.Errorf("failed to connect to IPAM daemon: %v", err)
 	}
-	c.ReqParams, err = cniConfToGRPCReq(c.Config, args)
-	if err != nil {
-		return cmdContext{}, fmt.Errorf("failed to convert CNI parameters to GRPC request: %v", err)
-	}
+	c.ReqParams = cniConfToGRPCReq(c.Config, args)
+
 	return c, nil
 }
 
@@ -192,13 +190,7 @@ func grpcRespToResult(resp *nodev1.AllocateResponse) (*current.Result, error) {
 	return result, nil
 }
 
-func cniConfToGRPCReq(conf *types.NetConf, args *skel.CmdArgs) (*nodev1.IPAMParameters, error) {
-	cniExtraArgs := &kubernetesCNIArgs{}
-	err := cnitypes.LoadArgs(args.Args, cniExtraArgs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load extra CNI args: %v", err)
-	}
-
+func cniConfToGRPCReq(conf *types.NetConf, args *skel.CmdArgs) *nodev1.IPAMParameters {
 	poolType := nodev1.PoolType_POOL_TYPE_IPPOOL
 	if conf.IPAM.PoolType == common.PoolTypeCIDRPool {
 		poolType = nodev1.PoolType_POOL_TYPE_CIDRPOOL
@@ -209,23 +201,16 @@ func cniConfToGRPCReq(conf *types.NetConf, args *skel.CmdArgs) (*nodev1.IPAMPara
 		CniIfname:      args.IfName,
 		CniContainerid: args.ContainerID,
 		Metadata: &nodev1.IPAMMetadata{
-			K8SPodName:      string(cniExtraArgs.K8S_POD_NAME),
-			K8SPodNamespace: string(cniExtraArgs.K8S_POD_NAMESPACE),
-			K8SPodUid:       string(cniExtraArgs.K8S_POD_UID),
+			K8SPodName:      conf.IPAM.K8SMetadata.PodName,
+			K8SPodNamespace: conf.IPAM.K8SMetadata.PodNamespace,
+			K8SPodUid:       conf.IPAM.K8SMetadata.PodUID,
 			DeviceId:        conf.DeviceID,
 		},
 	}
-
-	if req.Metadata.K8SPodName == "" {
-		return nil, log.Errorf("CNI_ARGS: K8S_POD_NAME is not provided by container runtime")
-	}
-	if req.Metadata.K8SPodNamespace == "" {
-		return nil, log.Errorf("CNI_ARGS: K8S_POD_NAMESPACE is not provided by container runtime")
-	}
 	if req.Metadata.K8SPodUid == "" {
-		log.Warningf("CNI_ARGS: K8S_POD_UID is not provided by container runtime")
+		log.Warningf("K8S_POD_UID is not provided by container runtime")
 	}
-	return req, nil
+	return req
 }
 
 // default NewGRPCClientFunc, initializes insecure GRPC connection to provided daemon socket
@@ -235,13 +220,4 @@ func defaultNewGRPCClientFunc(daemonSocket string) (GRPCClient, error) {
 		return nil, err
 	}
 	return nodev1.NewIPAMServiceClient(conn), nil
-}
-
-// kubernetesCNIArgs is the container for extra CNI Args which set by container runtimes
-// in Kubernetes
-type kubernetesCNIArgs struct {
-	cnitypes.CommonArgs
-	K8S_POD_NAME      cnitypes.UnmarshallableString //nolint
-	K8S_POD_NAMESPACE cnitypes.UnmarshallableString //nolint
-	K8S_POD_UID       cnitypes.UnmarshallableString //nolint
 }

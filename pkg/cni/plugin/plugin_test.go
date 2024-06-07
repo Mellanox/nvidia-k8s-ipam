@@ -66,6 +66,14 @@ var _ = Describe("plugin tests", func() {
 				Pools:    []string{"my-pool"},
 				LogFile:  path.Join(tmpDir, "nv-ipam.log"),
 				LogLevel: "debug",
+				K8SMetadata: struct {
+					PodName      string
+					PodNamespace string
+					PodUID       string
+				}{
+					PodName:      "test",
+					PodNamespace: "test",
+				},
 			},
 		}
 
@@ -80,7 +88,7 @@ var _ = Describe("plugin tests", func() {
 
 	Context("CmdAdd()", func() {
 		It("executes successfully", func() {
-			mockConfLoader.On("LoadConf", args.StdinData).Return(testConf, nil)
+			mockConfLoader.On("LoadConf", args).Return(testConf, nil)
 			mockDaemonClient.On("Allocate", mock.Anything, &nodev1.AllocateRequest{
 				Parameters: &nodev1.IPAMParameters{
 					Pools:          []string{"my-pool"},
@@ -106,7 +114,7 @@ var _ = Describe("plugin tests", func() {
 
 	Context("CmdDel()", func() {
 		It("executes successfully", func() {
-			mockConfLoader.On("LoadConf", args.StdinData).Return(testConf, nil)
+			mockConfLoader.On("LoadConf", args).Return(testConf, nil)
 			mockDaemonClient.On("Deallocate", mock.Anything, mock.Anything).Return(nil, nil)
 			err := p.CmdDel(args)
 			Expect(err).ToNot(HaveOccurred())
@@ -115,7 +123,7 @@ var _ = Describe("plugin tests", func() {
 
 	Context("CmdCheck()", func() {
 		It("executes successfully", func() {
-			mockConfLoader.On("LoadConf", args.StdinData).Return(testConf, nil)
+			mockConfLoader.On("LoadConf", args).Return(testConf, nil)
 			mockDaemonClient.On("IsAllocated", mock.Anything, mock.Anything).Return(nil, nil)
 			err := p.CmdCheck(args)
 			Expect(err).ToNot(HaveOccurred())
