@@ -195,6 +195,12 @@ func cniConfToGRPCReq(conf *types.NetConf, args *skel.CmdArgs) *nodev1.IPAMParam
 	if conf.IPAM.PoolType == common.PoolTypeCIDRPool {
 		poolType = nodev1.PoolType_POOL_TYPE_CIDRPOOL
 	}
+
+	requestedIPs := make([]string, 0, len(conf.IPAM.RequestedIPs))
+	for _, ipAddr := range conf.IPAM.RequestedIPs {
+		requestedIPs = append(requestedIPs, ipAddr.String())
+	}
+
 	req := &nodev1.IPAMParameters{
 		Pools:          conf.IPAM.Pools,
 		PoolType:       poolType,
@@ -206,10 +212,12 @@ func cniConfToGRPCReq(conf *types.NetConf, args *skel.CmdArgs) *nodev1.IPAMParam
 			K8SPodUid:       conf.IPAM.K8SMetadata.PodUID,
 			DeviceId:        conf.DeviceID,
 		},
+		RequestedIps: requestedIPs,
 	}
 	if req.Metadata.K8SPodUid == "" {
 		log.Warningf("K8S_POD_UID is not provided by container runtime")
 	}
+
 	return req
 }
 

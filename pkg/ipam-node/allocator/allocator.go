@@ -16,6 +16,7 @@ package allocator
 
 import (
 	"errors"
+	"fmt"
 	"net"
 
 	current "github.com/containernetworking/cni/pkg/types/100"
@@ -35,7 +36,7 @@ var (
 //go:generate mockery --name IPAllocator
 type IPAllocator interface {
 	// Allocate allocates IP address from the range for the container identified by ID and ifName
-	Allocate(id string, ifName string, meta types.ReservationMetadata) (*current.IPConfig, error)
+	Allocate(id string, ifName string, meta types.ReservationMetadata, staticIP net.IP) (*current.IPConfig, error)
 }
 
 type allocator struct {
@@ -57,9 +58,14 @@ func NewIPAllocator(s *RangeSet, exclusions *RangeSet,
 }
 
 // Allocate allocates an IP
-func (a *allocator) Allocate(id string, ifName string, meta types.ReservationMetadata) (*current.IPConfig, error) {
+func (a *allocator) Allocate(id string, ifName string,
+	meta types.ReservationMetadata, staticIP net.IP) (*current.IPConfig, error) {
 	var reservedIP *net.IPNet
 	var gw net.IP
+
+	if staticIP != nil {
+		return a.allocateStaticIP(id, ifName, meta, staticIP)
+	}
 
 	iter := a.getIter()
 	for {
@@ -83,6 +89,28 @@ func (a *allocator) Allocate(id string, ifName string, meta types.ReservationMet
 		Address: *reservedIP,
 		Gateway: gw,
 	}, nil
+}
+
+func (a *allocator) allocateStaticIP(id string, ifName string,
+	meta types.ReservationMetadata, staticIP net.IP) (*current.IPConfig, error) {
+	for _, r := range *a.rangeSet {
+		rangeSubnet := net.IPNet(r.Subnet)
+		if !rangeSubnet.Contains(staticIP) {
+			continue
+		}
+		lastReservedIP := a.session.GetLastReservedIP(a.poolKey)
+		err := a.session.Reserve(a.poolKey, id, ifName, meta, staticIP)
+		if err != nil {
+			return nil, fmt.Errorf("failed to allocate staticIP %s: %w", staticIP.String(), err)
+		}
+		// for static allocations we don't want to change lastReservedIP
+		a.session.SetLastReservedIP(a.poolKey, lastReservedIP)
+		return &current.IPConfig{
+			Address: net.IPNet{IP: staticIP, Mask: r.Subnet.Mask},
+			Gateway: r.Gateway,
+		}, nil
+	}
+	return nil, fmt.Errorf("can't find IP range in the allocator for static IP: %s", staticIP.String())
 }
 
 // RangeIter implements iterator over the RangeSet

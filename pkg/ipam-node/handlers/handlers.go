@@ -16,6 +16,7 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"net"
 
 	"github.com/go-logr/logr"
 	"google.golang.org/grpc/codes"
@@ -112,6 +113,12 @@ func validateReq(req paramsGetter) error {
 	}
 	if params.Metadata.K8SPodNamespace == "" {
 		return fieldIsRequiredError("parameters.metadata.k8s_pod_namespace")
+	}
+	for i, v := range params.RequestedIps {
+		ipAddr := net.ParseIP(v)
+		if ipAddr == nil {
+			return fieldsIsInvalidError(fmt.Sprintf("parameters.requested_ips[%d]", i))
+		}
 	}
 	return nil
 }
