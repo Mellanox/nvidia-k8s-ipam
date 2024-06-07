@@ -73,6 +73,8 @@ message IPAMParameters {
   IPAMMetadata metadata = 4;
   // type of the pool which is refered by the name in the pools field
   PoolType pool_type = 5;
+  // conatins IP that were statically requested
+  repeated string requested_ips = 6;
 }
 
 // IPAMMetadata contains metadata for IPAM calls
