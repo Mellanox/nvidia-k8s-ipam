@@ -54,11 +54,14 @@ func (h *Handlers) Allocate(ctx context.Context, req *nodev1.AllocateRequest) (*
 	}
 	resp := &nodev1.AllocateResponse{}
 	for _, r := range result {
-		resp.Allocations = append(resp.Allocations, &nodev1.AllocationInfo{
-			Pool:    r.Pool,
-			Ip:      r.Address.String(),
-			Gateway: r.Gateway.String(),
-		})
+		allocationInfo := &nodev1.AllocationInfo{
+			Pool: r.Pool,
+			Ip:   r.Address.String(),
+		}
+		if r.Gateway != nil {
+			allocationInfo.Gateway = r.Gateway.String()
+		}
+		resp.Allocations = append(resp.Allocations, allocationInfo)
 	}
 	return resp, nil
 }
@@ -108,15 +111,11 @@ func (h *Handlers) allocateInPool(pool string, reqLog logr.Logger,
 	if err != nil || subnet == nil || subnet.IP == nil || subnet.Mask == nil {
 		return PoolAlloc{}, poolCfgError(poolLog, pool, "invalid subnet")
 	}
-	gateway := net.ParseIP(poolCfg.Gateway)
-	if gateway == nil {
-		return PoolAlloc{}, poolCfgError(poolLog, pool, "invalid gateway")
-	}
 	rangeSet := &allocator.RangeSet{allocator.Range{
 		RangeStart: rangeStart,
 		RangeEnd:   rangeEnd,
 		Subnet:     cniTypes.IPNet(*subnet),
-		Gateway:    gateway,
+		Gateway:    net.ParseIP(poolCfg.Gateway),
 	}}
 	if err := rangeSet.Canonicalize(); err != nil {
 		return PoolAlloc{}, poolCfgError(poolLog, pool,

@@ -52,11 +52,14 @@ func (r *IPPool) Validate() field.ErrorList {
 				"is larger then amount of IPs available in the subnet"))
 		}
 	}
-	parsedGW := net.ParseIP(r.Spec.Gateway)
-	if len(parsedGW) == 0 {
-		errList = append(errList, field.Invalid(
-			field.NewPath("spec", "gateway"), r.Spec.Gateway,
-			"is invalid IP address"))
+	var parsedGW net.IP
+	if r.Spec.Gateway != "" {
+		parsedGW = net.ParseIP(r.Spec.Gateway)
+		if len(parsedGW) == 0 {
+			errList = append(errList, field.Invalid(
+				field.NewPath("spec", "gateway"), r.Spec.Gateway,
+				"is invalid IP address"))
+		}
 	}
 
 	if network != nil && len(parsedGW) != 0 && !network.Contains(parsedGW) {

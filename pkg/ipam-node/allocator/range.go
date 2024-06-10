@@ -56,13 +56,8 @@ func (r *Range) Canonicalize() error {
 			"For a subnet mask of length %d the network address is %s", ones, networkIP.String())
 	}
 
-	// If the gateway is nil, claim .1
-	if r.Gateway == nil {
-		r.Gateway = ip.NextIP(r.Subnet.IP)
-		if r.Gateway == nil {
-			return fmt.Errorf("computed Gateway for the subnet is not a valid IP")
-		}
-	} else {
+	// validate Gateway only if set
+	if r.Gateway != nil {
 		if err := CanonicalizeIP(&r.Gateway); err != nil {
 			return err
 		}

@@ -139,7 +139,7 @@ func (i *RangeIter) Next() (*net.IPNet, net.IP) {
 	if i.cur == nil {
 		i.cur = r.RangeStart
 		i.startIP = i.cur
-		if i.cur.Equal(r.Gateway) {
+		if r.Gateway != nil && i.cur.Equal(r.Gateway) {
 			return i.Next()
 		}
 		return &net.IPNet{IP: i.cur, Mask: r.Subnet.Mask}, r.Gateway
@@ -165,7 +165,7 @@ func (i *RangeIter) Next() (*net.IPNet, net.IP) {
 		return nil, nil
 	}
 
-	if i.cur.Equal(r.Gateway) {
+	if r.Gateway != nil && i.cur.Equal(r.Gateway) {
 		return i.Next()
 	}
 

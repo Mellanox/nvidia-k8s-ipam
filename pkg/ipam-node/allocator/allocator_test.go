@@ -26,6 +26,7 @@ import (
 	cniTypes "github.com/containernetworking/cni/pkg/types"
 	current "github.com/containernetworking/cni/pkg/types/100"
 
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ip"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/allocator"
 	storePkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/store"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/types"
@@ -46,7 +47,7 @@ type AllocatorTestCase struct {
 
 func mkAlloc(session storePkg.Session) allocator.IPAllocator {
 	p := allocator.RangeSet{
-		allocator.Range{Subnet: mustSubnet("192.168.1.0/29")},
+		allocator.Range{Subnet: mustSubnet("192.168.1.0/29"), Gateway: net.ParseIP("192.168.1.1")},
 	}
 	Expect(p.Canonicalize()).NotTo(HaveOccurred())
 	return allocator.NewIPAllocator(&p, testPoolName, session)
@@ -69,7 +70,7 @@ func (t AllocatorTestCase) run(idx int, session storePkg.Session) (*current.IPCo
 		if err != nil {
 			return nil, err
 		}
-		p = append(p, allocator.Range{Subnet: cniTypes.IPNet(*subnet)})
+		p = append(p, allocator.Range{Subnet: cniTypes.IPNet(*subnet), Gateway: ip.NextIP(subnet.IP)})
 	}
 	for r := range t.ipMap {
 		Expect(session.Reserve(testPoolName, r, "net1",
@@ -375,6 +376,26 @@ var _ = Describe("allocator", func() {
 
 			// get range iterator and do the first Next
 			checkAlloc(a, "0", net.IP{192, 168, 1, 0})
+		})
+	})
+	Context("no gateway", func() {
+		It("should use the first IP of the range", func() {
+			session, err := storePkg.New(
+				filepath.Join(GinkgoT().TempDir(), "test_store")).Open(context.Background())
+			Expect(err).NotTo(HaveOccurred())
+			defer func() {
+				_ = session.Commit()
+			}()
+			p := allocator.RangeSet{
+				allocator.Range{Subnet: mustSubnet("192.168.1.0/30")},
+				allocator.Range{Subnet: mustSubnet("192.168.1.4/30")},
+			}
+			Expect(p.Canonicalize()).NotTo(HaveOccurred())
+			a := allocator.NewIPAllocator(&p, testPoolName, session)
+			// get range iterator and do the first Next
+			checkAlloc(a, "0", net.IP{192, 168, 1, 1})
+			checkAlloc(a, "1", net.IP{192, 168, 1, 2})
+			checkAlloc(a, "2", net.IP{192, 168, 1, 5})
 		})
 	})
 })
