@@ -158,5 +158,60 @@ var _ = Describe("Types Tests", func() {
 				"runtimeConfig": {"ips": ["adfdsaf"]}, "ipam": {"confDir": %q}}`, "",
 				nil, false),
 		)
+		DescribeTable("PoolName",
+			func(fileContent string, stdinContent string, expectedValue []string, isValid bool) {
+				Expect(os.WriteFile(path.Join(testConfDir, cniTypes.ConfFileName),
+					[]byte(fileContent), 0o644)).NotTo(HaveOccurred())
+				stdinContent = fmt.Sprintf(stdinContent, testConfDir)
+				conf, err := cniTypes.NewConfLoader().LoadConf(&skel.CmdArgs{StdinData: []byte(stdinContent), Args: testArgs})
+				if isValid {
+					Expect(err).NotTo(HaveOccurred())
+					Expect(conf.IPAM.Pools).To(Equal(expectedValue))
+				} else {
+					Expect(err).To(HaveOccurred())
+				}
+			},
+			Entry("use network name if not set",
+				`{}`,
+				`{"name": "my-net", "ipam": {"confDir": %q}}`,
+				[]string{"my-net"}, true),
+			Entry("from conf file",
+				`{"poolName": "fromFile"}`,
+				`{"name": "my-net", "ipam": {"confDir": %q}}`,
+				[]string{"fromFile"}, true),
+			Entry("from STDIN",
+				`{"poolName": "fromFile"}`,
+				`{"name": "my-net", "ipam": {"confDir": %q, "poolName": "fromSTDIN"}}`,
+				[]string{"fromSTDIN"}, true),
+			Entry("from STDIN CNI args",
+				`{"poolName": "fromFile"}`,
+				`{"name": "my-net", "args":{"cni": {"poolNames": ["fromArgs", "fromArgs2"]}}, 
+							"ipam": {"confDir": %q, "poolName": "fromSTDIN"}}`,
+				[]string{"fromArgs", "fromArgs2"}, true),
+			Entry("too many pools",
+				`{}`,
+				`{"name": "my-net", "ipam": {"confDir": %q, "poolName": "pool1,pool2,pool3"}}`,
+				[]string{}, false),
+		)
+		DescribeTable("PoolType",
+			func(fileContent string, stdinContent string, expectedValue string, isValid bool) {
+				Expect(os.WriteFile(path.Join(testConfDir, cniTypes.ConfFileName),
+					[]byte(fileContent), 0o644)).NotTo(HaveOccurred())
+				stdinContent = fmt.Sprintf(stdinContent, testConfDir)
+				conf, err := cniTypes.NewConfLoader().LoadConf(&skel.CmdArgs{StdinData: []byte(stdinContent), Args: testArgs})
+				if isValid {
+					Expect(err).NotTo(HaveOccurred())
+					Expect(conf.IPAM.PoolType).To(Equal(expectedValue))
+				} else {
+					Expect(err).To(HaveOccurred())
+				}
+			},
+			Entry("use IPPool by default", `{}`, `{"name": "my-net", "ipam": {"confDir": %q}}`, "ippool", true),
+			Entry("from conf file", `{"poolType": "CIDRPool"}`, `{"name": "my-net", "ipam": {"confDir": %q}}`, "cidrpool", true),
+			Entry("from STDIN", `{}`, `{"name": "my-net", "ipam": {"confDir": %q, "poolType": "cidrPool"}}`, "cidrpool", true),
+			Entry("from STDIN CNI Args", `{}`, `{"name": "my-net", 
+				"args": {"cni": {"poolType":"cidrpool"}}, "ipam": {"confDir": %q}}`, "cidrpool", true),
+			Entry("unknown type", `{}`, `{"name": "my-net", "ipam": {"confDir": %q, "poolType": "foobar"}}`, "", false),
+		)
 	})
 })

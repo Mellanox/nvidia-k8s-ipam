@@ -95,7 +95,9 @@ type NetConf struct {
 
 // IPAMArgs holds arguments from stdin args["cni"]
 type IPAMArgs struct {
-	IPs []string `json:"ips"`
+	IPs       []string `json:"ips"`
+	PoolNames []string `json:"poolNames"`
+	PoolType  string   `json:"poolType"`
 }
 
 // IPAMEnvArgs holds arguments from CNI_ARGS env variable
@@ -171,15 +173,13 @@ func (cl *confLoader) LoadConf(args *skel.CmdArgs) (*NetConf, error) {
 		return nil, err
 	}
 
-	n.IPAM.Pools, err = parsePoolName(n.IPAM.PoolName)
+	n.IPAM.Pools, err = getPools(n)
 	if err != nil {
 		return nil, err
 	}
-
-	n.IPAM.PoolType = strings.ToLower(n.IPAM.PoolType)
-	if n.IPAM.PoolType != common.PoolTypeIPPool && n.IPAM.PoolType != common.PoolTypeCIDRPool {
-		return nil, fmt.Errorf("unsupported poolType %s, supported values: %s, %s",
-			n.IPAM.PoolType, common.PoolTypeIPPool, common.PoolTypeCIDRPool)
+	n.IPAM.PoolType, err = getPoolType(n)
+	if err != nil {
+		return nil, err
 	}
 	return n, nil
 }
@@ -219,8 +219,15 @@ func parseIP(s string) net.IP {
 	return net.ParseIP(s)
 }
 
-func parsePoolName(poolName string) ([]string, error) {
-	pools := strings.Split(poolName, ",")
+// returns list of pools that should be used by the plugin.
+// STDIN field "args[cni][poolNames]" has the highest priority
+func getPools(n *NetConf) ([]string, error) {
+	var pools []string
+	if n.Args != nil && len(n.Args.ArgsCNI.PoolNames) > 0 {
+		pools = n.Args.ArgsCNI.PoolNames
+	} else {
+		pools = strings.Split(n.IPAM.PoolName, ",")
+	}
 	if len(pools) > 2 {
 		return nil, fmt.Errorf("pool field can't contain more then two entries")
 	}
@@ -230,6 +237,23 @@ func parsePoolName(poolName string) ([]string, error) {
 		}
 	}
 	return pools, nil
+}
+
+// returns poolType that should be used by the plugin.
+// STDIN field "args[cni][poolType]" has the highest priority
+func getPoolType(n *NetConf) (string, error) {
+	var poolType string
+	if n.Args != nil && n.Args.ArgsCNI.PoolType != "" {
+		poolType = n.Args.ArgsCNI.PoolType
+	} else {
+		poolType = n.IPAM.PoolType
+	}
+	poolType = strings.ToLower(poolType)
+	if poolType != common.PoolTypeIPPool && poolType != common.PoolTypeCIDRPool {
+		return "", fmt.Errorf("unsupported poolType %s, supported values: %s, %s",
+			poolType, common.PoolTypeIPPool, common.PoolTypeCIDRPool)
+	}
+	return poolType, nil
 }
 
 // loadFromConfFile returns *IPAMConf with values from config file located in filePath.
