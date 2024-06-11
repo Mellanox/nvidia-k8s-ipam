@@ -342,6 +342,9 @@ spec:
   subnet: 192.168.0.0/16
   perNodeBlockSize: 100
   gateway: 192.168.0.1
+  exclusions: # optional
+  - startIP: 192.168.0.10
+    endIP: 192.168.0.20
   nodeSelector:
     nodeSelectorTerms:
     - matchExpressions:
@@ -374,6 +377,11 @@ spec:
   * `subnet`: IP Subnet of the pool.
   * `gateway` (optional): Gateway IP of the subnet.
   * `perNodeBlockSize`: the number of IPs of IP Blocks allocated to Nodes.
+  * `exclusions` (optional, list): contains reserved IP addresses that should not be allocated by nv-ipam node component.
+
+    * `startIP`: start IP of the exclude range (inclusive).
+    * `endIP`: end IP of the exclude range (inclusive).
+
   * `nodeSelector` (optional): A list of node selector terms. The terms are ORed. Each term can have a list of matchExpressions that are ANDed. Only the nodes that match the provided labels will get assigned IP Blocks for the defined pool.
 
 > __Notes:__

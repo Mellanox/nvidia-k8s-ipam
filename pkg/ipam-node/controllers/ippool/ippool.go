@@ -52,15 +52,19 @@ func (r *IPPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 	reqLog.Info("Notification on IPPool", "name", ipPool.Name)
 	found := false
-
 	for _, alloc := range ipPool.Status.Allocations {
 		if alloc.NodeName == r.NodeName {
+			exclusions := make([]pool.ExclusionRange, 0, len(ipPool.Spec.Exclusions))
+			for _, e := range ipPool.Spec.Exclusions {
+				exclusions = append(exclusions, pool.ExclusionRange{StartIP: e.StartIP, EndIP: e.EndIP})
+			}
 			ipPool := &pool.Pool{
-				Name:    ipPool.Name,
-				Subnet:  ipPool.Spec.Subnet,
-				Gateway: ipPool.Spec.Gateway,
-				StartIP: alloc.StartIP,
-				EndIP:   alloc.EndIP,
+				Name:       ipPool.Name,
+				Subnet:     ipPool.Spec.Subnet,
+				Gateway:    ipPool.Spec.Gateway,
+				StartIP:    alloc.StartIP,
+				EndIP:      alloc.EndIP,
+				Exclusions: exclusions,
 			}
 			r.PoolManager.UpdatePool(poolKey, ipPool)
 			found = true

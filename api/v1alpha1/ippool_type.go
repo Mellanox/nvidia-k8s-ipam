@@ -39,6 +39,8 @@ type IPPoolSpec struct {
 	// amount of IPs to allocate for each node,
 	// must be less than amount of available IPs in the subnet
 	PerNodeBlockSize int `json:"perNodeBlockSize"`
+	// contains reserved IP addresses that should not be allocated by nv-ipam
+	Exclusions []ExcludeRange `json:"exclusions,omitempty"`
 	// gateway for the pool
 	Gateway string `json:"gateway,omitempty"`
 	// selector for nodes, if empty match all nodes

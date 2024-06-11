@@ -49,6 +49,9 @@ func (r *IPPool) Validate() field.ErrorList {
 				"is larger then amount of IPs available in the subnet"))
 		}
 	}
+	if network != nil {
+		errList = append(errList, validateExclusions(network, r.Spec.Exclusions, field.NewPath("spec"))...)
+	}
 	var parsedGW net.IP
 	if r.Spec.Gateway != "" {
 		parsedGW = net.ParseIP(r.Spec.Gateway)

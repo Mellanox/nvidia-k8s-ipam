@@ -6,6 +6,9 @@ metadata:
 spec:
   subnet: 192.168.0.0/16
   perNodeBlockSize: 128
+  exclusions: # optional
+  - startIP: 192.168.0.10
+    endIP: 192.168.0.20
   gateway: 192.168.0.1
   nodeSelector:
     nodeSelectorTerms:
