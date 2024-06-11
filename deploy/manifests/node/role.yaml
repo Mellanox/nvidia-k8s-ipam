@@ -15,6 +15,7 @@ rules:
       - nv-ipam.nvidia.com
     resources:
       - ippools
+      - cidrpools
     verbs:
       - get
       - list

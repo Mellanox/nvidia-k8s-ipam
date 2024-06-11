@@ -146,3 +146,45 @@ func IsBroadcast(ip net.IP, network *net.IPNet) bool {
 		binary.BigEndian.Uint32(network.IP.To4())|^binary.BigEndian.Uint32(net.IP(network.Mask).To4()))
 	return ip.Equal(masked)
 }
+
+// GetSubnetGen returns generator function that can be called multiple times
+// to generate subnet for the network with the prefix size.
+// The function always returns non-nil function.
+// The generator function will return nil If subnet can't be generate
+// (invalid input args provided, or no more subnets available for the network).
+// Example:
+// _, network, _ := net.ParseCIDR("192.168.0.0/23")
+// gen := GetSubnetGen(network, 25)
+// println(gen().String()) // 192.168.0.0/25
+// println(gen().String()) // 192.168.0.128/25
+// println(gen().String()) // 192.168.1.0/25
+// println(gen().String()) // 192.168.1.128/25
+// println(gen().String()) // <nil> - no more ranges available
+func GetSubnetGen(network *net.IPNet, prefixSize uint) func() *net.IPNet {
+	networkOnes, netBitsTotal := network.Mask.Size()
+	if prefixSize < uint(networkOnes) || prefixSize > uint(netBitsTotal) {
+		return func() *net.IPNet { return nil }
+	}
+	isIPv6 := false
+	if network.IP.To4() == nil {
+		isIPv6 = true
+	}
+	networkIPAsInt := ipToInt(network.IP)
+	subnetIPCount := big.NewInt(0).Exp(big.NewInt(2), big.NewInt(int64(netBitsTotal)-int64(prefixSize)), nil)
+	subnetCount := big.NewInt(0).Exp(big.NewInt(2), big.NewInt(int64(prefixSize)-int64(networkOnes)), nil)
+
+	curSubnetIndex := big.NewInt(0)
+
+	return func() *net.IPNet {
+		if curSubnetIndex.Cmp(subnetCount) >= 0 {
+			return nil
+		}
+		subnetIPAsInt := big.NewInt(0).Add(networkIPAsInt, big.NewInt(0).Mul(subnetIPCount, curSubnetIndex))
+		curSubnetIndex.Add(curSubnetIndex, big.NewInt(1))
+		subnetIP := intToIP(subnetIPAsInt, isIPv6)
+		if subnetIP == nil {
+			return nil
+		}
+		return &net.IPNet{IP: subnetIP, Mask: net.CIDRMask(int(prefixSize), netBitsTotal)}
+	}
+}
