@@ -1,2 +1,3 @@
 resources:
   - nv-ipam.nvidia.com_ippools.yaml
+  - nv-ipam.nvidia.com_cidrpools.yaml
