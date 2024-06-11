@@ -135,11 +135,12 @@ func (h *Handlers) allocateInPool(poolName string, reqLog logr.Logger,
 	if err != nil || subnet == nil || subnet.IP == nil || subnet.Mask == nil {
 		return PoolAlloc{}, poolCfgError(poolLog, poolName, poolType, "invalid subnet")
 	}
+	gateway := net.ParseIP(poolCfg.Gateway)
 	rangeSet := &allocator.RangeSet{allocator.Range{
 		RangeStart: rangeStart,
 		RangeEnd:   rangeEnd,
 		Subnet:     cniTypes.IPNet(*subnet),
-		Gateway:    net.ParseIP(poolCfg.Gateway),
+		Gateway:    gateway,
 	}}
 	if err := rangeSet.Canonicalize(); err != nil {
 		return PoolAlloc{}, poolCfgError(poolLog, poolName, poolType,
@@ -152,6 +153,16 @@ func (h *Handlers) allocateInPool(poolName string, reqLog logr.Logger,
 			break
 		}
 	}
+
+	if params.Features != nil && params.Features.AllocateDefaultGateway {
+		if gateway == nil {
+			return PoolAlloc{}, status.Errorf(codes.InvalidArgument,
+				"pool without gateway can't be used with allocate_default_gateway feature,"+
+					"pool \"%s\", poolType \"%s\"", poolName, poolType)
+		}
+		selectedStaticIP = gateway
+	}
+
 	exclusionRangeSet := make(allocator.RangeSet, 0, len(poolCfg.Exclusions))
 	for _, e := range poolCfg.Exclusions {
 		exclusionRangeSet = append(exclusionRangeSet, allocator.Range{
@@ -197,8 +208,13 @@ func (h *Handlers) allocateInPool(poolName string, reqLog logr.Logger,
 		return PoolAlloc{}, status.Errorf(codes.Internal,
 			"failed to allocate IP address in pool \"%s\", poolType \"%s\"", poolName, poolType)
 	}
-	poolLog.Info("IP address allocated", "allocation", result.String())
+	if params.Features != nil && params.Features.AllocateDefaultGateway {
+		// TODO (ykulazhenkov): do we want to keep gateway in this case?
+		// if we will return gateway here, the container will have same IP as interface address and as gateway
+		result.Gateway = nil
+	}
 
+	poolLog.Info("IP address allocated", "allocation", result.String())
 	return PoolAlloc{
 		Pool:     poolName,
 		IPConfig: result,

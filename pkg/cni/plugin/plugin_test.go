@@ -100,6 +100,7 @@ var _ = Describe("plugin tests", func() {
 						K8SPodNamespace: "test",
 					},
 					RequestedIps: []string{},
+					Features:     &nodev1.IPAMFeatures{},
 				}}).Return(&nodev1.AllocateResponse{
 				Allocations: []*nodev1.AllocationInfo{{
 					Pool:     "my-pool",

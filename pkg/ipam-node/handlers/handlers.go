@@ -120,6 +120,10 @@ func validateReq(req paramsGetter) error {
 			return fieldsIsInvalidError(fmt.Sprintf("parameters.requested_ips[%d]", i))
 		}
 	}
+	if params.Features != nil && params.Features.AllocateDefaultGateway && len(params.RequestedIps) > 0 {
+		return status.Errorf(codes.InvalidArgument,
+			"parameters.features.allocate_default_gateway can't be used together with static IPs")
+	}
 	return nil
 }
 

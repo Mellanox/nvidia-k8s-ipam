@@ -213,6 +213,9 @@ func cniConfToGRPCReq(conf *types.NetConf, args *skel.CmdArgs) *nodev1.IPAMParam
 			DeviceId:        conf.DeviceID,
 		},
 		RequestedIps: requestedIPs,
+		Features: &nodev1.IPAMFeatures{
+			AllocateDefaultGateway: conf.IPAM.Features.AllocateDefaultGateway,
+		},
 	}
 	if req.Metadata.K8SPodUid == "" {
 		log.Warningf("K8S_POD_UID is not provided by container runtime")

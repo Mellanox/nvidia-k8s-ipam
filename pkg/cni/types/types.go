@@ -77,6 +77,12 @@ type IPAMConf struct {
 	} `json:"-"`
 	// requested IPs from CNI_ARGS, args and capabilities
 	RequestedIPs []net.IP `json:"-"`
+	// internal representation of the requested features
+	Features struct {
+		// request to allocate pool's default gateway as
+		// interface IP address for the container
+		AllocateDefaultGateway bool
+	} `json:"-"`
 }
 
 // NetConf is CNI network config
@@ -95,9 +101,10 @@ type NetConf struct {
 
 // IPAMArgs holds arguments from stdin args["cni"]
 type IPAMArgs struct {
-	IPs       []string `json:"ips"`
-	PoolNames []string `json:"poolNames"`
-	PoolType  string   `json:"poolType"`
+	IPs                    []string `json:"ips"`
+	PoolNames              []string `json:"poolNames"`
+	PoolType               string   `json:"poolType"`
+	AllocateDefaultGateway bool     `json:"allocateDefaultGateway"`
 }
 
 // IPAMEnvArgs holds arguments from CNI_ARGS env variable
@@ -171,6 +178,16 @@ func (cl *confLoader) LoadConf(args *skel.CmdArgs) (*NetConf, error) {
 
 	if err := cl.loadEnvCNIArgs(n, args); err != nil {
 		return nil, err
+	}
+
+	if n.Args != nil && n.Args.ArgsCNI != nil {
+		n.IPAM.Features.AllocateDefaultGateway = n.Args.ArgsCNI.AllocateDefaultGateway
+	}
+
+	if n.IPAM.Features.AllocateDefaultGateway {
+		if len(n.IPAM.RequestedIPs) > 0 {
+			return nil, fmt.Errorf("allocatedDefaultGateway can't be used together with static IP request")
+		}
 	}
 
 	n.IPAM.Pools, err = getPools(n)

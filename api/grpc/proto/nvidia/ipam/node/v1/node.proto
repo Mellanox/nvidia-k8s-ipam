@@ -71,10 +71,12 @@ message IPAMParameters {
   string cni_ifname = 3;
   // required, additional metadata to identify IP allocation
   IPAMMetadata metadata = 4;
-  // type of the pool which is refered by the name in the pools field
+  // optional, type of the pool which is refered by the name in the pools field
   PoolType pool_type = 5;
-  // conatins IP that were statically requested
+  // optional, conatins IP that were statically requested
   repeated string requested_ips = 6;
+  // optional, conatins extra features requested for the allocation
+  IPAMFeatures features = 7;
 }
 
 // IPAMMetadata contains metadata for IPAM calls
@@ -87,6 +89,12 @@ message IPAMMetadata {
   string k8s_pod_uid = 3;
   // optional, PCI device ID related to the allocation
   string device_id = 4;
+}
+
+// IPAMFeatures contains extra features requested for the IPAM call
+message IPAMFeatures {
+  // optional, request IP of the default gateway from the pool be allocated for container
+  bool allocate_default_gateway = 1;
 }
 
 // IsAllocatedRequest contains parameters for IsAllocated rpc call
