@@ -30,7 +30,10 @@ var _ = Describe("Validate", func() {
 			Spec: v1alpha1.IPPoolSpec{
 				Subnet:           "192.168.0.0/16",
 				PerNodeBlockSize: 128,
-				Gateway:          "192.168.0.1",
+				Exclusions: []v1alpha1.ExcludeRange{
+					{StartIP: "192.168.0.100", EndIP: "192.168.0.110"},
+				},
+				Gateway: "192.168.0.1",
 				NodeSelector: &corev1.NodeSelector{
 					NodeSelectorTerms: []corev1.NodeSelectorTerm{{
 						MatchExpressions: []corev1.NodeSelectorRequirement{{
@@ -49,7 +52,10 @@ var _ = Describe("Validate", func() {
 			Spec: v1alpha1.IPPoolSpec{
 				Subnet:           "2001:db8:3333:4444::0/64",
 				PerNodeBlockSize: 1000,
-				Gateway:          "2001:db8:3333:4444::1",
+				Exclusions: []v1alpha1.ExcludeRange{
+					{StartIP: "2001:db8:3333:4444::3", EndIP: "2001:db8:3333:4444::4"},
+				},
+				Gateway: "2001:db8:3333:4444::1",
 			},
 		}
 		Expect(ipPool.Validate()).To(BeEmpty())
@@ -96,6 +102,22 @@ var _ = Describe("Validate", func() {
 		Expect(ipPool.Validate().ToAggregate().Error()).
 			To(
 				ContainSubstring("spec.perNodeBlockSize"),
+			)
+	})
+	It("Invalid - exclusions not part of the subnet", func() {
+		ipPool := v1alpha1.IPPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.IPPoolSpec{
+				Subnet: "192.168.0.0/24",
+				Exclusions: []v1alpha1.ExcludeRange{
+					{StartIP: "10.10.10.10", EndIP: "10.10.10.20"},
+				},
+				PerNodeBlockSize: 10,
+			},
+		}
+		Expect(ipPool.Validate().ToAggregate().Error()).
+			To(
+				ContainSubstring("spec.exclusions"),
 			)
 	})
 	It("Invalid - gateway outside of the subnet", func() {

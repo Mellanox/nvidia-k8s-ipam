@@ -44,6 +44,22 @@ spec:
           spec:
             description: IPPoolSpec contains configuration for IP pool
             properties:
+              exclusions:
+                description: contains reserved IP addresses that should not be allocated
+                  by nv-ipam
+                items:
+                  description: ExcludeRange contains range of IP addresses to exclude
+                    from allocation startIP and endIP are part of the ExcludeRange
+                  properties:
+                    endIP:
+                      type: string
+                    startIP:
+                      type: string
+                  required:
+                  - endIP
+                  - startIP
+                  type: object
+                type: array
               gateway:
                 description: gateway for the pool
                 type: string
