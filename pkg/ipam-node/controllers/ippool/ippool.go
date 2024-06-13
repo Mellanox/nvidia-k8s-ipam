@@ -23,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	ipamv1alpha1 "github.com/Mellanox/nvidia-k8s-ipam/api/v1alpha1"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
 )
 
@@ -38,11 +39,12 @@ type IPPoolReconciler struct {
 func (r *IPPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	reqLog := log.FromContext(ctx)
 	ipPool := &ipamv1alpha1.IPPool{}
+	poolKey := common.GetPoolKey(req.Name, common.PoolTypeIPPool)
 	err := r.Client.Get(ctx, req.NamespacedName, ipPool)
 	if err != nil {
 		if apiErrors.IsNotFound(err) {
 			reqLog.Info("IPPool not found, removing from PoolManager")
-			r.PoolManager.RemovePool(req.Name)
+			r.PoolManager.RemovePool(poolKey)
 			return ctrl.Result{}, nil
 		}
 		reqLog.Error(err, "failed to get IPPool object from the cache")
@@ -50,22 +52,23 @@ func (r *IPPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 	reqLog.Info("Notification on IPPool", "name", ipPool.Name)
 	found := false
+
 	for _, alloc := range ipPool.Status.Allocations {
 		if alloc.NodeName == r.NodeName {
-			ipPool := &pool.IPPool{
+			ipPool := &pool.Pool{
 				Name:    ipPool.Name,
 				Subnet:  ipPool.Spec.Subnet,
 				Gateway: ipPool.Spec.Gateway,
 				StartIP: alloc.StartIP,
 				EndIP:   alloc.EndIP,
 			}
-			r.PoolManager.UpdatePool(ipPool)
+			r.PoolManager.UpdatePool(poolKey, ipPool)
 			found = true
 			break
 		}
 	}
 	if !found {
-		r.PoolManager.RemovePool(req.Name)
+		r.PoolManager.RemovePool(poolKey)
 	}
 	return ctrl.Result{}, nil
 }

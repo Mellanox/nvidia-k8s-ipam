@@ -96,13 +96,13 @@ func (_c *Session_Commit_Call) RunAndReturn(run func() error) *Session_Commit_Ca
 	return _c
 }
 
-// GetLastReservedIP provides a mock function with given fields: pool
-func (_m *Session) GetLastReservedIP(pool string) net.IP {
-	ret := _m.Called(pool)
+// GetLastReservedIP provides a mock function with given fields: poolKey
+func (_m *Session) GetLastReservedIP(poolKey string) net.IP {
+	ret := _m.Called(poolKey)
 
 	var r0 net.IP
 	if rf, ok := ret.Get(0).(func(string) net.IP); ok {
-		r0 = rf(pool)
+		r0 = rf(poolKey)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(net.IP)
@@ -118,12 +118,12 @@ type Session_GetLastReservedIP_Call struct {
 }
 
 // GetLastReservedIP is a helper method to define mock.On call
-//   - pool string
-func (_e *Session_Expecter) GetLastReservedIP(pool interface{}) *Session_GetLastReservedIP_Call {
-	return &Session_GetLastReservedIP_Call{Call: _e.mock.On("GetLastReservedIP", pool)}
+//   - poolKey string
+func (_e *Session_Expecter) GetLastReservedIP(poolKey interface{}) *Session_GetLastReservedIP_Call {
+	return &Session_GetLastReservedIP_Call{Call: _e.mock.On("GetLastReservedIP", poolKey)}
 }
 
-func (_c *Session_GetLastReservedIP_Call) Run(run func(pool string)) *Session_GetLastReservedIP_Call {
+func (_c *Session_GetLastReservedIP_Call) Run(run func(poolKey string)) *Session_GetLastReservedIP_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		run(args[0].(string))
 	})
@@ -140,13 +140,13 @@ func (_c *Session_GetLastReservedIP_Call) RunAndReturn(run func(string) net.IP) 
 	return _c
 }
 
-// GetReservationByID provides a mock function with given fields: pool, id, ifName
-func (_m *Session) GetReservationByID(pool string, id string, ifName string) *types.Reservation {
-	ret := _m.Called(pool, id, ifName)
+// GetReservationByID provides a mock function with given fields: poolKey, id, ifName
+func (_m *Session) GetReservationByID(poolKey string, id string, ifName string) *types.Reservation {
+	ret := _m.Called(poolKey, id, ifName)
 
 	var r0 *types.Reservation
 	if rf, ok := ret.Get(0).(func(string, string, string) *types.Reservation); ok {
-		r0 = rf(pool, id, ifName)
+		r0 = rf(poolKey, id, ifName)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*types.Reservation)
@@ -162,14 +162,14 @@ type Session_GetReservationByID_Call struct {
 }
 
 // GetReservationByID is a helper method to define mock.On call
-//   - pool string
+//   - poolKey string
 //   - id string
 //   - ifName string
-func (_e *Session_Expecter) GetReservationByID(pool interface{}, id interface{}, ifName interface{}) *Session_GetReservationByID_Call {
-	return &Session_GetReservationByID_Call{Call: _e.mock.On("GetReservationByID", pool, id, ifName)}
+func (_e *Session_Expecter) GetReservationByID(poolKey interface{}, id interface{}, ifName interface{}) *Session_GetReservationByID_Call {
+	return &Session_GetReservationByID_Call{Call: _e.mock.On("GetReservationByID", poolKey, id, ifName)}
 }
 
-func (_c *Session_GetReservationByID_Call) Run(run func(pool string, id string, ifName string)) *Session_GetReservationByID_Call {
+func (_c *Session_GetReservationByID_Call) Run(run func(poolKey string, id string, ifName string)) *Session_GetReservationByID_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		run(args[0].(string), args[1].(string), args[2].(string))
 	})
@@ -229,13 +229,13 @@ func (_c *Session_ListPools_Call) RunAndReturn(run func() []string) *Session_Lis
 	return _c
 }
 
-// ListReservations provides a mock function with given fields: pool
-func (_m *Session) ListReservations(pool string) []types.Reservation {
-	ret := _m.Called(pool)
+// ListReservations provides a mock function with given fields: poolKey
+func (_m *Session) ListReservations(poolKey string) []types.Reservation {
+	ret := _m.Called(poolKey)
 
 	var r0 []types.Reservation
 	if rf, ok := ret.Get(0).(func(string) []types.Reservation); ok {
-		r0 = rf(pool)
+		r0 = rf(poolKey)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]types.Reservation)
@@ -251,12 +251,12 @@ type Session_ListReservations_Call struct {
 }
 
 // ListReservations is a helper method to define mock.On call
-//   - pool string
-func (_e *Session_Expecter) ListReservations(pool interface{}) *Session_ListReservations_Call {
-	return &Session_ListReservations_Call{Call: _e.mock.On("ListReservations", pool)}
+//   - poolKey string
+func (_e *Session_Expecter) ListReservations(poolKey interface{}) *Session_ListReservations_Call {
+	return &Session_ListReservations_Call{Call: _e.mock.On("ListReservations", poolKey)}
 }
 
-func (_c *Session_ListReservations_Call) Run(run func(pool string)) *Session_ListReservations_Call {
+func (_c *Session_ListReservations_Call) Run(run func(poolKey string)) *Session_ListReservations_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		run(args[0].(string))
 	})
@@ -273,9 +273,9 @@ func (_c *Session_ListReservations_Call) RunAndReturn(run func(string) []types.R
 	return _c
 }
 
-// ReleaseReservationByID provides a mock function with given fields: pool, id, ifName
-func (_m *Session) ReleaseReservationByID(pool string, id string, ifName string) {
-	_m.Called(pool, id, ifName)
+// ReleaseReservationByID provides a mock function with given fields: poolKey, id, ifName
+func (_m *Session) ReleaseReservationByID(poolKey string, id string, ifName string) {
+	_m.Called(poolKey, id, ifName)
 }
 
 // Session_ReleaseReservationByID_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ReleaseReservationByID'
@@ -284,14 +284,14 @@ type Session_ReleaseReservationByID_Call struct {
 }
 
 // ReleaseReservationByID is a helper method to define mock.On call
-//   - pool string
+//   - poolKey string
 //   - id string
 //   - ifName string
-func (_e *Session_Expecter) ReleaseReservationByID(pool interface{}, id interface{}, ifName interface{}) *Session_ReleaseReservationByID_Call {
-	return &Session_ReleaseReservationByID_Call{Call: _e.mock.On("ReleaseReservationByID", pool, id, ifName)}
+func (_e *Session_Expecter) ReleaseReservationByID(poolKey interface{}, id interface{}, ifName interface{}) *Session_ReleaseReservationByID_Call {
+	return &Session_ReleaseReservationByID_Call{Call: _e.mock.On("ReleaseReservationByID", poolKey, id, ifName)}
 }
 
-func (_c *Session_ReleaseReservationByID_Call) Run(run func(pool string, id string, ifName string)) *Session_ReleaseReservationByID_Call {
+func (_c *Session_ReleaseReservationByID_Call) Run(run func(poolKey string, id string, ifName string)) *Session_ReleaseReservationByID_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		run(args[0].(string), args[1].(string), args[2].(string))
 	})
@@ -308,9 +308,9 @@ func (_c *Session_ReleaseReservationByID_Call) RunAndReturn(run func(string, str
 	return _c
 }
 
-// RemovePool provides a mock function with given fields: pool
-func (_m *Session) RemovePool(pool string) {
-	_m.Called(pool)
+// RemovePool provides a mock function with given fields: poolKey
+func (_m *Session) RemovePool(poolKey string) {
+	_m.Called(poolKey)
 }
 
 // Session_RemovePool_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'RemovePool'
@@ -319,12 +319,12 @@ type Session_RemovePool_Call struct {
 }
 
 // RemovePool is a helper method to define mock.On call
-//   - pool string
-func (_e *Session_Expecter) RemovePool(pool interface{}) *Session_RemovePool_Call {
-	return &Session_RemovePool_Call{Call: _e.mock.On("RemovePool", pool)}
+//   - poolKey string
+func (_e *Session_Expecter) RemovePool(poolKey interface{}) *Session_RemovePool_Call {
+	return &Session_RemovePool_Call{Call: _e.mock.On("RemovePool", poolKey)}
 }
 
-func (_c *Session_RemovePool_Call) Run(run func(pool string)) *Session_RemovePool_Call {
+func (_c *Session_RemovePool_Call) Run(run func(poolKey string)) *Session_RemovePool_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		run(args[0].(string))
 	})
@@ -341,13 +341,13 @@ func (_c *Session_RemovePool_Call) RunAndReturn(run func(string)) *Session_Remov
 	return _c
 }
 
-// Reserve provides a mock function with given fields: pool, id, ifName, meta, address
-func (_m *Session) Reserve(pool string, id string, ifName string, meta types.ReservationMetadata, address net.IP) error {
-	ret := _m.Called(pool, id, ifName, meta, address)
+// Reserve provides a mock function with given fields: poolKey, id, ifName, meta, address
+func (_m *Session) Reserve(poolKey string, id string, ifName string, meta types.ReservationMetadata, address net.IP) error {
+	ret := _m.Called(poolKey, id, ifName, meta, address)
 
 	var r0 error
 	if rf, ok := ret.Get(0).(func(string, string, string, types.ReservationMetadata, net.IP) error); ok {
-		r0 = rf(pool, id, ifName, meta, address)
+		r0 = rf(poolKey, id, ifName, meta, address)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -361,16 +361,16 @@ type Session_Reserve_Call struct {
 }
 
 // Reserve is a helper method to define mock.On call
-//   - pool string
+//   - poolKey string
 //   - id string
 //   - ifName string
 //   - meta types.ReservationMetadata
 //   - address net.IP
-func (_e *Session_Expecter) Reserve(pool interface{}, id interface{}, ifName interface{}, meta interface{}, address interface{}) *Session_Reserve_Call {
-	return &Session_Reserve_Call{Call: _e.mock.On("Reserve", pool, id, ifName, meta, address)}
+func (_e *Session_Expecter) Reserve(poolKey interface{}, id interface{}, ifName interface{}, meta interface{}, address interface{}) *Session_Reserve_Call {
+	return &Session_Reserve_Call{Call: _e.mock.On("Reserve", poolKey, id, ifName, meta, address)}
 }
 
-func (_c *Session_Reserve_Call) Run(run func(pool string, id string, ifName string, meta types.ReservationMetadata, address net.IP)) *Session_Reserve_Call {
+func (_c *Session_Reserve_Call) Run(run func(poolKey string, id string, ifName string, meta types.ReservationMetadata, address net.IP)) *Session_Reserve_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		run(args[0].(string), args[1].(string), args[2].(string), args[3].(types.ReservationMetadata), args[4].(net.IP))
 	})
@@ -387,9 +387,9 @@ func (_c *Session_Reserve_Call) RunAndReturn(run func(string, string, string, ty
 	return _c
 }
 
-// SetLastReservedIP provides a mock function with given fields: pool, ip
-func (_m *Session) SetLastReservedIP(pool string, ip net.IP) {
-	_m.Called(pool, ip)
+// SetLastReservedIP provides a mock function with given fields: poolKey, ip
+func (_m *Session) SetLastReservedIP(poolKey string, ip net.IP) {
+	_m.Called(poolKey, ip)
 }
 
 // Session_SetLastReservedIP_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetLastReservedIP'
@@ -398,13 +398,13 @@ type Session_SetLastReservedIP_Call struct {
 }
 
 // SetLastReservedIP is a helper method to define mock.On call
-//   - pool string
+//   - poolKey string
 //   - ip net.IP
-func (_e *Session_Expecter) SetLastReservedIP(pool interface{}, ip interface{}) *Session_SetLastReservedIP_Call {
-	return &Session_SetLastReservedIP_Call{Call: _e.mock.On("SetLastReservedIP", pool, ip)}
+func (_e *Session_Expecter) SetLastReservedIP(poolKey interface{}, ip interface{}) *Session_SetLastReservedIP_Call {
+	return &Session_SetLastReservedIP_Call{Call: _e.mock.On("SetLastReservedIP", poolKey, ip)}
 }
 
-func (_c *Session_SetLastReservedIP_Call) Run(run func(pool string, ip net.IP)) *Session_SetLastReservedIP_Call {
+func (_c *Session_SetLastReservedIP_Call) Run(run func(poolKey string, ip net.IP)) *Session_SetLastReservedIP_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		run(args[0].(string), args[1].(net.IP))
 	})

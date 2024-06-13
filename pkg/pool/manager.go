@@ -21,45 +21,45 @@ import "sync"
 type Manager interface {
 	ConfigReader
 	// Update Pool's config from IPPool CR
-	UpdatePool(pool *IPPool)
-	// Remove Pool's config
-	RemovePool(poolName string)
+	UpdatePool(key string, pool *Pool)
+	// Remove Pool's config by key
+	RemovePool(key string)
 }
 
 // NewManager create and initialize new manager instance
 func NewManager() Manager {
 	return &manager{
-		poolByName: make(map[string]*IPPool),
+		poolByKey: make(map[string]*Pool),
 	}
 }
 
 type manager struct {
-	lock       sync.Mutex
-	poolByName map[string]*IPPool
+	lock      sync.Mutex
+	poolByKey map[string]*Pool
 }
 
-func (m *manager) UpdatePool(pool *IPPool) {
+func (m *manager) UpdatePool(key string, pool *Pool) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
-	m.poolByName[pool.Name] = pool
+	m.poolByKey[key] = pool
 }
 
-func (m *manager) RemovePool(poolName string) {
+func (m *manager) RemovePool(key string) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
-	delete(m.poolByName, poolName)
+	delete(m.poolByKey, key)
 }
 
-// GetPoolByName is the Manager interface implementation for the manager
-func (m *manager) GetPoolByName(name string) *IPPool {
+// GetPoolByKey is the Manager interface implementation for the manager
+func (m *manager) GetPoolByKey(key string) *Pool {
 	m.lock.Lock()
 	defer m.lock.Unlock()
-	return m.poolByName[name]
+	return m.poolByKey[key]
 }
 
 // GetPools is the Manager interface implementation for the manager
-func (m *manager) GetPools() map[string]*IPPool {
+func (m *manager) GetPools() map[string]*Pool {
 	m.lock.Lock()
 	defer m.lock.Unlock()
-	return m.poolByName
+	return m.poolByKey
 }

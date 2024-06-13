@@ -22,20 +22,20 @@ import (
 
 var _ = Describe("Manager", func() {
 	It("Update pool data", func() {
-		testPoolName := "my-pool-1"
-		testPool := &pool.IPPool{
-			Name:    testPoolName,
+		testPoolKey := "my-pool-1"
+		testPool := &pool.Pool{
+			Name:    testPoolKey,
 			Subnet:  "192.168.0.0/16",
 			StartIP: "192.168.0.2",
 			EndIP:   "192.168.0.254",
 			Gateway: "192.168.0.1",
 		}
 		mgr := pool.NewManager()
-		Expect(mgr.GetPoolByName(testPoolName)).To(BeNil())
-		mgr.UpdatePool(testPool)
-		Expect(mgr.GetPoolByName(testPoolName)).NotTo(BeNil())
+		Expect(mgr.GetPoolByKey(testPoolKey)).To(BeNil())
+		mgr.UpdatePool(testPoolKey, testPool)
+		Expect(mgr.GetPoolByKey(testPoolKey)).NotTo(BeNil())
 		Expect(mgr.GetPools()).To(HaveLen(1))
-		mgr.RemovePool(testPoolName)
-		Expect(mgr.GetPoolByName(testPoolName)).To(BeNil())
+		mgr.RemovePool(testPoolKey)
+		Expect(mgr.GetPoolByKey(testPoolKey)).To(BeNil())
 	})
 })

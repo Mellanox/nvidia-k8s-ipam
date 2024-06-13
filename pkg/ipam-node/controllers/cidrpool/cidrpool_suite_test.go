@@ -1,5 +1,5 @@
 /*
- Copyright 2023, NVIDIA CORPORATION & AFFILIATES
+ Copyright 2024, NVIDIA CORPORATION & AFFILIATES
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
  You may obtain a copy of the License at
@@ -11,16 +11,16 @@
  limitations under the License.
 */
 
-package common
+package controllers
 
-const (
-	// IPAMName is the name of the IPAM plugin
-	IPAMName = "nvidia-k8s-ipam"
+import (
+	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-const (
-	// PoolTypeIPPool contains string representation for pool type of IPPool
-	PoolTypeIPPool = "ippool"
-	// PoolTypeCIDRPool contains string representation for pool type of CIDRPool
-	PoolTypeCIDRPool = "cidrpool"
-)
+func TestController(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Controller suite")
+}

@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	nodev1 "github.com/Mellanox/nvidia-k8s-ipam/api/grpc/nvidia/ipam/node/v1"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
 )
 
 // IsAllocated is the handler for IsAllocated GRPC endpoint
@@ -31,7 +32,7 @@ func (h *Handlers) IsAllocated(
 	if err := validateReq(req); err != nil {
 		return nil, err
 	}
-	params := req.Parameters
+	params := setDefaultsToParams(req.Parameters)
 	store, err := h.openStore(ctx)
 	if err != nil {
 		return nil, err
@@ -39,13 +40,13 @@ func (h *Handlers) IsAllocated(
 	if err := checkReqIsCanceled(ctx); err != nil {
 		return nil, h.closeSession(ctx, store, err)
 	}
-
-	for _, p := range params.Pools {
-		poolLog := reqLog.WithValues("pool", p)
-		res := store.GetReservationByID(p, params.CniContainerid, params.CniIfname)
+	poolType := poolTypeAsString(params.PoolType)
+	for _, poolName := range params.Pools {
+		poolLog := reqLog.WithValues("pool", poolName, "poolType", poolType)
+		res := store.GetReservationByID(common.GetPoolKey(poolName, poolType), params.CniContainerid, params.CniIfname)
 		if res == nil {
 			poolLog.Info("reservation not found")
-			err = status.Errorf(codes.NotFound, "reservation for pool %s not found", p)
+			err = status.Errorf(codes.NotFound, "reservation for pool \"%s\", poolType \"%s\" not found", poolName, poolType)
 			break
 		}
 		reqLog.Info("reservation exist")

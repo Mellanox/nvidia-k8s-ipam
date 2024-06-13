@@ -24,17 +24,24 @@ const (
 	IPBlocksAnnotation = "ipam.nvidia.com/ip-blocks"
 )
 
-// IPPool represents a block of IPs from a given Subnet
-type IPPool struct {
-	Name    string `json:"-"`
-	Subnet  string `json:"subnet"`
+// Pool represents generic pool configuration
+type Pool struct {
+	Name       string           `json:"-"`
+	Subnet     string           `json:"subnet"`
+	StartIP    string           `json:"startIP"`
+	EndIP      string           `json:"endIP"`
+	Gateway    string           `json:"gateway"`
+	Exclusions []ExclusionRange `json:"exclusions"`
+}
+
+// ExclusionRange contains range of IP to exclude from the allocation
+type ExclusionRange struct {
 	StartIP string `json:"startIP"`
 	EndIP   string `json:"endIP"`
-	Gateway string `json:"gateway"`
 }
 
 // String return string representation of the IPPool config
-func (p *IPPool) String() string {
+func (p *Pool) String() string {
 	//nolint:errchkjson
 	data, _ := json.Marshal(p)
 	return string(data)
@@ -42,14 +49,14 @@ func (p *IPPool) String() string {
 
 // ConfigReader is an interface to which provides access to the pool configuration
 type ConfigReader interface {
-	// GetPoolByName returns IPPool for the provided pool name or nil if pool doesnt exist
-	GetPoolByName(name string) *IPPool
+	// GetPoolByKey returns IPPool for the provided pool name or nil if pool doesn't exist
+	GetPoolByKey(key string) *Pool
 	// GetPools returns map with information about all pools
-	GetPools() map[string]*IPPool
+	GetPools() map[string]*Pool
 }
 
 type configReader struct {
-	poolByName map[string]*IPPool
+	poolByKey map[string]*Pool
 }
 
 func NewConfigReader(node *v1.Node) (ConfigReader, error) {
@@ -62,27 +69,27 @@ func NewConfigReader(node *v1.Node) (ConfigReader, error) {
 		return nil, fmt.Errorf("%s node annotation not found", IPBlocksAnnotation)
 	}
 
-	poolByName := make(map[string]*IPPool)
-	err := json.Unmarshal([]byte(blocks), &poolByName)
+	poolByKey := make(map[string]*Pool)
+	err := json.Unmarshal([]byte(blocks), &poolByKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse %s annotation content. %w", IPBlocksAnnotation, err)
 	}
 
-	for poolName, pool := range poolByName {
+	for poolName, pool := range poolByKey {
 		pool.Name = poolName
 	}
 
 	return &configReader{
-		poolByName: poolByName,
+		poolByKey: poolByKey,
 	}, nil
 }
 
-// GetPoolByName implements ConfigReader interface
-func (r *configReader) GetPoolByName(name string) *IPPool {
-	return r.poolByName[name]
+// GetPoolByKey implements ConfigReader interface
+func (r *configReader) GetPoolByKey(key string) *Pool {
+	return r.poolByKey[key]
 }
 
 // GetPools implements ConfigReader interface
-func (r *configReader) GetPools() map[string]*IPPool {
-	return r.poolByName
+func (r *configReader) GetPools() map[string]*Pool {
+	return r.poolByKey
 }

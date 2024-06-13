@@ -27,6 +27,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	nodev1 "github.com/Mellanox/nvidia-k8s-ipam/api/grpc/nvidia/ipam/node/v1"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/allocator"
 	storePkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/store"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/types"
@@ -40,7 +41,7 @@ func (h *Handlers) Allocate(ctx context.Context, req *nodev1.AllocateRequest) (*
 	if err := validateReq(req); err != nil {
 		return nil, err
 	}
-	params := req.Parameters
+	params := setDefaultsToParams(req.Parameters)
 	store, err := h.openStore(ctx)
 	if err != nil {
 		return nil, err
@@ -55,8 +56,9 @@ func (h *Handlers) Allocate(ctx context.Context, req *nodev1.AllocateRequest) (*
 	resp := &nodev1.AllocateResponse{}
 	for _, r := range result {
 		allocationInfo := &nodev1.AllocationInfo{
-			Pool: r.Pool,
-			Ip:   r.Address.String(),
+			Pool:     r.Pool,
+			Ip:       r.Address.String(),
+			PoolType: params.PoolType,
 		}
 		if r.Gateway != nil {
 			allocationInfo.Gateway = r.Gateway.String()
@@ -76,9 +78,9 @@ func (h *Handlers) allocate(reqLog logr.Logger,
 	session storePkg.Session, params *nodev1.IPAMParameters) ([]PoolAlloc, error) {
 	var err error
 	result := make([]PoolAlloc, 0, len(params.Pools))
-	for _, pool := range params.Pools {
+	for _, poolName := range params.Pools {
 		var alloc PoolAlloc
-		alloc, err = h.allocateInPool(pool, reqLog, session, params)
+		alloc, err = h.allocateInPool(poolName, reqLog, session, params)
 		if err != nil {
 			break
 		}
@@ -91,25 +93,28 @@ func (h *Handlers) allocate(reqLog logr.Logger,
 	return result, nil
 }
 
-func (h *Handlers) allocateInPool(pool string, reqLog logr.Logger,
+func (h *Handlers) allocateInPool(poolName string, reqLog logr.Logger,
 	session storePkg.Session, params *nodev1.IPAMParameters) (PoolAlloc, error) {
-	poolLog := reqLog.WithValues("pool", pool)
+	poolType := poolTypeAsString(params.PoolType)
+	poolLog := reqLog.WithValues("pool", poolName, "poolType", poolType)
+	poolKey := common.GetPoolKey(poolName, poolType)
 
-	poolCfg := h.poolConfReader.GetPoolByName(pool)
+	poolCfg := h.poolConfReader.GetPoolByKey(poolKey)
 	if poolCfg == nil {
-		return PoolAlloc{}, status.Errorf(codes.NotFound, "configuration for pool %s not found", pool)
+		return PoolAlloc{}, status.Errorf(codes.NotFound,
+			"configuration for pool \"%s\", poolType \"%s\" not found", poolName, poolType)
 	}
 	rangeStart := net.ParseIP(poolCfg.StartIP)
 	if rangeStart == nil {
-		return PoolAlloc{}, poolCfgError(poolLog, pool, "invalid rangeStart")
+		return PoolAlloc{}, poolCfgError(poolLog, poolName, poolType, "invalid rangeStart")
 	}
 	rangeEnd := net.ParseIP(poolCfg.EndIP)
 	if rangeEnd == nil {
-		return PoolAlloc{}, poolCfgError(poolLog, pool, "invalid rangeEnd")
+		return PoolAlloc{}, poolCfgError(poolLog, poolName, poolType, "invalid rangeEnd")
 	}
 	_, subnet, err := net.ParseCIDR(poolCfg.Subnet)
 	if err != nil || subnet == nil || subnet.IP == nil || subnet.Mask == nil {
-		return PoolAlloc{}, poolCfgError(poolLog, pool, "invalid subnet")
+		return PoolAlloc{}, poolCfgError(poolLog, poolName, poolType, "invalid subnet")
 	}
 	rangeSet := &allocator.RangeSet{allocator.Range{
 		RangeStart: rangeStart,
@@ -118,10 +123,24 @@ func (h *Handlers) allocateInPool(pool string, reqLog logr.Logger,
 		Gateway:    net.ParseIP(poolCfg.Gateway),
 	}}
 	if err := rangeSet.Canonicalize(); err != nil {
-		return PoolAlloc{}, poolCfgError(poolLog, pool,
+		return PoolAlloc{}, poolCfgError(poolLog, poolName, poolType,
 			fmt.Sprintf("invalid range config: %s", err.Error()))
 	}
-	alloc := h.getAllocFunc(rangeSet, pool, session)
+	exclusionRangeSet := make(allocator.RangeSet, 0, len(poolCfg.Exclusions))
+	for _, e := range poolCfg.Exclusions {
+		exclusionRangeSet = append(exclusionRangeSet, allocator.Range{
+			Subnet:     cniTypes.IPNet(*subnet),
+			RangeStart: net.ParseIP(e.StartIP),
+			RangeEnd:   net.ParseIP(e.EndIP),
+		})
+	}
+	if len(exclusionRangeSet) > 0 {
+		if err := exclusionRangeSet.Canonicalize(); err != nil {
+			return PoolAlloc{}, poolCfgError(poolLog, poolName, poolType,
+				fmt.Sprintf("invalid exclusion range config: %s", err.Error()))
+		}
+	}
+	alloc := h.getAllocFunc(rangeSet, &exclusionRangeSet, poolKey, session)
 	allocMeta := types.ReservationMetadata{
 		CreateTime:         time.Now().Format(time.RFC3339Nano),
 		PoolConfigSnapshot: poolCfg.String(),
@@ -137,23 +156,26 @@ func (h *Handlers) allocateInPool(pool string, reqLog logr.Logger,
 		poolLog.Error(err, "failed to allocate IP address")
 		if errors.Is(err, storePkg.ErrReservationAlreadyExist) {
 			return PoolAlloc{}, status.Errorf(codes.AlreadyExists,
-				"allocation already exist in the pool %s", pool)
+				"allocation already exist in the pool \"%s\", poolType \"%s\"", poolName, poolType)
 		}
 		if errors.Is(err, allocator.ErrNoFreeAddresses) {
-			return PoolAlloc{}, status.Errorf(codes.ResourceExhausted, "no free addresses in the pool %s", pool)
+			return PoolAlloc{}, status.Errorf(codes.ResourceExhausted,
+				"no free addresses in the pool \"%s\", poolType \"%s\"",
+				poolName, poolType)
 		}
-		return PoolAlloc{}, status.Errorf(codes.Internal, "failed to allocate IP address in pool %s", pool)
+		return PoolAlloc{}, status.Errorf(codes.Internal,
+			"failed to allocate IP address in pool \"%s\", poolType \"%s\"", poolName, poolType)
 	}
 	poolLog.Info("IP address allocated", "allocation", result.String())
 
 	return PoolAlloc{
-		Pool:     pool,
+		Pool:     poolName,
 		IPConfig: result,
 	}, nil
 }
 
-func poolCfgError(reqLog logr.Logger, pool, reason string) error {
-	reqLog.Error(nil, "invalid pool config", "pool", pool,
+func poolCfgError(reqLog logr.Logger, pool, poolType, reason string) error {
+	reqLog.Error(nil, "invalid pool config", "pool", pool, "poolType", poolType,
 		"reason", reason)
-	return status.Errorf(codes.Internal, "invalid config for pool %s", pool)
+	return status.Errorf(codes.Internal, "invalid config for pool \"%s\", poolType \"%s\"", pool, poolType)
 }

@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	testPoolName      = "pool1"
+	testPoolKey      = "pool1"
 	testContainerID   = "id1"
 	testNetIfName     = "net0"
 	testPodUUID       = "a9516e9d-6f45-4693-b299-cc3d2f83e26a"
@@ -42,7 +42,7 @@ const (
 )
 
 func createTestReservation(s storePkg.Session) {
-	ExpectWithOffset(1, s.Reserve(testPoolName, testContainerID, testNetIfName, types.ReservationMetadata{
+	ExpectWithOffset(1, s.Reserve(testPoolKey, testContainerID, testNetIfName, types.ReservationMetadata{
 		CreateTime:         time.Now().Format(time.RFC3339Nano),
 		PodUUID:            testPodUUID,
 		PodName:            testPodName,
@@ -73,30 +73,30 @@ var _ = Describe("Store", func() {
 		createTestReservation(s)
 
 		By("Check reservation exist")
-		res := s.GetReservationByID(testPoolName, testContainerID, testNetIfName)
+		res := s.GetReservationByID(testPoolKey, testContainerID, testNetIfName)
 		Expect(res).NotTo(BeNil())
 		Expect(res.ContainerID).To(Equal(testContainerID))
 
-		resList := s.ListReservations(testPoolName)
+		resList := s.ListReservations(testPoolKey)
 		Expect(resList).To(HaveLen(1))
 		Expect(resList[0].ContainerID).To(Equal(testContainerID))
 
 		pools := s.ListPools()
-		Expect(pools).To(Equal([]string{testPoolName}))
+		Expect(pools).To(Equal([]string{testPoolKey}))
 
 		By("Check last reserved IP")
-		Expect(s.GetLastReservedIP(testPoolName)).To(Equal(net.ParseIP(testIP)))
+		Expect(s.GetLastReservedIP(testPoolKey)).To(Equal(net.ParseIP(testIP)))
 
 		By("Set last reserved IP")
 		newLastReservedIP := net.ParseIP("192.168.1.200")
-		s.SetLastReservedIP(testPoolName, newLastReservedIP)
-		Expect(s.GetLastReservedIP(testPoolName)).To(Equal(newLastReservedIP))
+		s.SetLastReservedIP(testPoolKey, newLastReservedIP)
+		Expect(s.GetLastReservedIP(testPoolKey)).To(Equal(newLastReservedIP))
 
 		By("Release reservation")
-		s.ReleaseReservationByID(testPoolName, testContainerID, testNetIfName)
+		s.ReleaseReservationByID(testPoolKey, testContainerID, testNetIfName)
 
 		By("Check reservation removed")
-		Expect(s.GetReservationByID(testPoolName, testContainerID, testNetIfName)).To(BeNil())
+		Expect(s.GetReservationByID(testPoolKey, testContainerID, testNetIfName)).To(BeNil())
 
 		By("Commit changes")
 		Expect(s.Commit()).NotTo(HaveOccurred())
@@ -109,7 +109,7 @@ var _ = Describe("Store", func() {
 
 		s, err = store.Open(context.Background())
 		Expect(err).NotTo(HaveOccurred())
-		res := s.GetReservationByID(testPoolName, testContainerID, testNetIfName)
+		res := s.GetReservationByID(testPoolKey, testContainerID, testNetIfName)
 		Expect(res).NotTo(BeNil())
 		Expect(res.ContainerID).To(Equal(testContainerID))
 	})
@@ -121,15 +121,15 @@ var _ = Describe("Store", func() {
 
 		s, err = store.Open(context.Background())
 		Expect(err).NotTo(HaveOccurred())
-		Expect(s.GetReservationByID(testPoolName, testContainerID, testNetIfName)).To(BeNil())
+		Expect(s.GetReservationByID(testPoolKey, testContainerID, testNetIfName)).To(BeNil())
 	})
 	It("Closed session should panic", func() {
 		s, err := store.Open(context.Background())
 		Expect(err).NotTo(HaveOccurred())
 		s.Cancel()
-		Expect(func() { s.GetReservationByID(testPoolName, testContainerID, testNetIfName) }).To(Panic())
-		Expect(func() { s.ListReservations(testPoolName) }).To(Panic())
-		Expect(func() { s.GetLastReservedIP(testPoolName) }).To(Panic())
+		Expect(func() { s.GetReservationByID(testPoolKey, testContainerID, testNetIfName) }).To(Panic())
+		Expect(func() { s.ListReservations(testPoolKey) }).To(Panic())
+		Expect(func() { s.GetLastReservedIP(testPoolKey) }).To(Panic())
 	})
 	It("Reload data from the disk", func() {
 		s, err := store.Open(context.Background())
@@ -140,7 +140,7 @@ var _ = Describe("Store", func() {
 		store2 := storePkg.New(storePath)
 		s, err = store2.Open(context.Background())
 		Expect(err).NotTo(HaveOccurred())
-		Expect(s.GetReservationByID(testPoolName, testContainerID, testNetIfName)).NotTo(BeNil())
+		Expect(s.GetReservationByID(testPoolKey, testContainerID, testNetIfName)).NotTo(BeNil())
 	})
 	It("Concurrent access", func() {
 		done := make(chan interface{})
@@ -164,7 +164,7 @@ var _ = Describe("Store", func() {
 				s2, err := store.Open(context.Background())
 				Expect(err).NotTo(HaveOccurred())
 				ch <- 2
-				Expect(s2.GetReservationByID(testPoolName, testContainerID, testNetIfName)).NotTo(BeNil())
+				Expect(s2.GetReservationByID(testPoolKey, testContainerID, testNetIfName)).NotTo(BeNil())
 				s2.Cancel()
 			}()
 			wg.Wait()
@@ -219,7 +219,7 @@ var _ = Describe("Store", func() {
 		Expect(err).NotTo(HaveOccurred())
 		createTestReservation(s)
 		Expect(
-			s.Reserve(testPoolName, testContainerID, testNetIfName,
+			s.Reserve(testPoolKey, testContainerID, testNetIfName,
 				types.ReservationMetadata{}, net.ParseIP(testIP2))).To(MatchError(storePkg.ErrReservationAlreadyExist))
 	})
 	It("Duplicate IP allocation", func() {
@@ -227,15 +227,15 @@ var _ = Describe("Store", func() {
 		Expect(err).NotTo(HaveOccurred())
 		createTestReservation(s)
 		Expect(
-			s.Reserve(testPoolName, "other", testNetIfName,
+			s.Reserve(testPoolKey, "other", testNetIfName,
 				types.ReservationMetadata{}, net.ParseIP(testIP))).To(MatchError(storePkg.ErrIPAlreadyReserved))
 	})
 	It("Remove pool data", func() {
 		s, err := store.Open(context.Background())
 		Expect(err).NotTo(HaveOccurred())
 		createTestReservation(s)
-		Expect(s.ListReservations(testPoolName)).NotTo(BeEmpty())
-		s.RemovePool(testPoolName)
-		Expect(s.ListReservations(testPoolName)).To(BeEmpty())
+		Expect(s.ListReservations(testPoolKey)).NotTo(BeEmpty())
+		s.RemovePool(testPoolKey)
+		Expect(s.ListReservations(testPoolKey)).To(BeEmpty())
 	})
 })

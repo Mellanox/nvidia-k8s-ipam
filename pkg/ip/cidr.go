@@ -147,6 +147,24 @@ func IsBroadcast(ip net.IP, network *net.IPNet) bool {
 	return ip.Equal(masked)
 }
 
+// IsPointToPointSubnet returns true if the network is point to point (/31 or /127)
+func IsPointToPointSubnet(network *net.IPNet) bool {
+	ones, maskLen := network.Mask.Size()
+	return ones == maskLen-1
+}
+
+// LastIP returns the last IP of a subnet, excluding the broadcast if IPv4 (if not /31 net)
+func LastIP(network *net.IPNet) net.IP {
+	var end net.IP
+	for i := 0; i < len(network.IP); i++ {
+		end = append(end, network.IP[i]|^network.Mask[i])
+	}
+	if network.IP.To4() != nil && !IsPointToPointSubnet(network) {
+		end[3]--
+	}
+	return end
+}
+
 // GetSubnetGen returns generator function that can be called multiple times
 // to generate subnet for the network with the prefix size.
 // The function always returns non-nil function.

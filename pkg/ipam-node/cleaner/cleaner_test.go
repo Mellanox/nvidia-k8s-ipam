@@ -64,9 +64,9 @@ var _ = Describe("Cleaner", func() {
 
 			poolManager := poolMockPkg.NewManager(GinkgoT())
 			// pool2 has no config in the k8s API
-			poolManager.On("GetPoolByName", testPool2).Return(nil)
+			poolManager.On("GetPoolByKey", testPool2).Return(nil)
 			// pool3 has config in the k8s API
-			poolManager.On("GetPoolByName", testPool3).Return(&poolPkg.IPPool{})
+			poolManager.On("GetPoolByKey", testPool3).Return(&poolPkg.Pool{})
 
 			session, err := store.Open(ctx)
 			Expect(err).NotTo(HaveOccurred())

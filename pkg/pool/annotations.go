@@ -21,7 +21,7 @@ import (
 )
 
 // SetIPBlockAnnotation serialize IP pools settings for the node and add this info as annotation
-func SetIPBlockAnnotation(node *v1.Node, pools map[string]*IPPool) error {
+func SetIPBlockAnnotation(node *v1.Node, pools map[string]*Pool) error {
 	annotations := node.GetAnnotations()
 	if annotations == nil {
 		annotations = map[string]string{}

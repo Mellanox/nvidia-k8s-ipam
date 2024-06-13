@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-logr/logr"
 
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ip"
 	storePkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/store"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/types"
@@ -140,14 +141,15 @@ func getWalkFunc(logger logr.Logger, session storePkg.Session) filepath.WalkFunc
 			return fmt.Errorf("unexpected allocation format")
 		}
 		containerID, interfaceName := strings.Trim(allocData[0], "\r"), allocData[1]
-		if err := session.Reserve(poolName, containerID, interfaceName, types.ReservationMetadata{
-			CreateTime:         time.Now().Format(time.RFC3339Nano),
-			PodUUID:            PlaceholderForUnknownField,
-			PodName:            PlaceholderForUnknownField,
-			PodNamespace:       PlaceholderForUnknownField,
-			DeviceID:           PlaceholderForUnknownField,
-			PoolConfigSnapshot: PlaceholderForUnknownField,
-		}, addr); err != nil {
+		if err := session.Reserve(common.GetPoolKey(poolName, common.PoolTypeIPPool),
+			containerID, interfaceName, types.ReservationMetadata{
+				CreateTime:         time.Now().Format(time.RFC3339Nano),
+				PodUUID:            PlaceholderForUnknownField,
+				PodName:            PlaceholderForUnknownField,
+				PodNamespace:       PlaceholderForUnknownField,
+				DeviceID:           PlaceholderForUnknownField,
+				PoolConfigSnapshot: PlaceholderForUnknownField,
+			}, addr); err != nil {
 			logger.V(1).Info("failed to reserve IP, ignore allocation",
 				"pool", poolName, "ip", info.Name(), "reason", err.Error())
 			// ignore reservation error and skip the reservation

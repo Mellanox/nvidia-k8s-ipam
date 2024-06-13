@@ -26,15 +26,15 @@ import (
 
 var _ = Describe("annotations tests", func() {
 	Context("SetIPBlockAnnotation", func() {
-		testPools := make(map[string]*pool.IPPool)
-		testPools["my-pool-1"] = &pool.IPPool{
+		testPools := make(map[string]*pool.Pool)
+		testPools["my-pool-1"] = &pool.Pool{
 			Name:    "my-pool-1",
 			Subnet:  "192.168.0.0/16",
 			StartIP: "192.168.0.2",
 			EndIP:   "192.168.0.254",
 			Gateway: "192.168.0.1",
 		}
-		testPools["my-pool-2"] = &pool.IPPool{
+		testPools["my-pool-2"] = &pool.Pool{
 			Name:    "my-pool-2",
 			Subnet:  "10.100.0.0/16",
 			StartIP: "10.100.0.2",

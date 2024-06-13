@@ -22,12 +22,14 @@ import (
 	"google.golang.org/grpc/status"
 
 	nodev1 "github.com/Mellanox/nvidia-k8s-ipam/api/grpc/nvidia/ipam/node/v1"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/allocator"
 	storePkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/store"
 	poolPkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
 )
 
-type GetAllocatorFunc = func(s *allocator.RangeSet, poolName string, session storePkg.Session) allocator.IPAllocator
+type GetAllocatorFunc = func(s *allocator.RangeSet, exclusions *allocator.RangeSet,
+	poolKey string, session storePkg.Session) allocator.IPAllocator
 
 // New create and initialize new instance of grpc Handlers
 func New(poolConfReader poolPkg.ConfigReader, store storePkg.Store, getAllocFunc GetAllocatorFunc) *Handlers {
@@ -114,12 +116,20 @@ func validateReq(req paramsGetter) error {
 	return nil
 }
 
+func setDefaultsToParams(params *nodev1.IPAMParameters) *nodev1.IPAMParameters {
+	if params.PoolType == nodev1.PoolType_POOL_TYPE_UNSPECIFIED {
+		params.PoolType = nodev1.PoolType_POOL_TYPE_IPPOOL
+	}
+	return params
+}
+
 func addFieldsToLogger(log logr.Logger, req paramsGetter) logr.Logger {
 	params := req.GetParameters()
 	if params == nil {
 		return log
 	}
 	return log.WithValues("pools", params.Pools,
+		"pool_type", params.PoolType,
 		"container_id", params.CniContainerid,
 		"interface_name", params.CniIfname,
 		"meta", params.Metadata.String(),
@@ -133,4 +143,13 @@ func checkReqIsCanceled(ctx context.Context) error {
 	default:
 		return nil
 	}
+}
+
+// converts poolType from grpc request to string representations,
+// default/fallback value is IPPool
+func poolTypeAsString(poolType nodev1.PoolType) string {
+	if poolType == nodev1.PoolType_POOL_TYPE_CIDRPOOL {
+		return common.PoolTypeCIDRPool
+	}
+	return common.PoolTypeIPPool
 }

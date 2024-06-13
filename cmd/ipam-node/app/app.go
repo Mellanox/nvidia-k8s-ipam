@@ -58,6 +58,7 @@ import (
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/allocator"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/cleaner"
+	cidrpoolctrl "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/controllers/cidrpool"
 	ippoolctrl "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/controllers/ippool"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/grpc/middleware"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/handlers"
@@ -157,6 +158,7 @@ func RunNodeDaemon(ctx context.Context, config *rest.Config, opts *options.Optio
 	k8sClient, err := client.New(config, client.Options{Scheme: mgr.GetScheme(), Mapper: mgr.GetRESTMapper()})
 	if err != nil {
 		logger.Error(err, "unable to direct k8s client")
+		return err
 	}
 
 	if err = (&ippoolctrl.IPPoolReconciler{
@@ -166,6 +168,15 @@ func RunNodeDaemon(ctx context.Context, config *rest.Config, opts *options.Optio
 		NodeName:    opts.NodeName,
 	}).SetupWithManager(mgr); err != nil {
 		logger.Error(err, "unable to create controller", "controller", "IPPool")
+		return err
+	}
+	if err = (&cidrpoolctrl.CIDRPoolReconciler{
+		PoolManager: poolManager,
+		Client:      mgr.GetClient(),
+		Scheme:      mgr.GetScheme(),
+		NodeName:    opts.NodeName,
+	}).SetupWithManager(mgr); err != nil {
+		logger.Error(err, "unable to create controller", "controller", "CIDRPool")
 		return err
 	}
 

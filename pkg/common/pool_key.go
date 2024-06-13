@@ -1,5 +1,5 @@
 /*
- Copyright 2023, NVIDIA CORPORATION & AFFILIATES
+ Copyright 2024, NVIDIA CORPORATION & AFFILIATES
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
  You may obtain a copy of the License at
@@ -13,14 +13,11 @@
 
 package common
 
-const (
-	// IPAMName is the name of the IPAM plugin
-	IPAMName = "nvidia-k8s-ipam"
-)
-
-const (
-	// PoolTypeIPPool contains string representation for pool type of IPPool
-	PoolTypeIPPool = "ippool"
-	// PoolTypeCIDRPool contains string representation for pool type of CIDRPool
-	PoolTypeCIDRPool = "cidrpool"
-)
+// GetPoolKey builds uniq key for pool from poolName and poolType
+func GetPoolKey(poolName, poolType string) string {
+	if poolType == "" || poolType == PoolTypeIPPool {
+		// to avoid migration of the store, and to support downgrade
+		return poolName
+	}
+	return poolType + "/" + poolName
+}

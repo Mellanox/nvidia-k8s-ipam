@@ -50,7 +50,7 @@ func mkAlloc(session storePkg.Session) allocator.IPAllocator {
 		allocator.Range{Subnet: mustSubnet("192.168.1.0/29"), Gateway: net.ParseIP("192.168.1.1")},
 	}
 	Expect(p.Canonicalize()).NotTo(HaveOccurred())
-	return allocator.NewIPAllocator(&p, testPoolName, session)
+	return allocator.NewIPAllocator(&p, nil, testPoolName, session)
 }
 
 func newAllocatorWithMultiRanges(session storePkg.Session) allocator.IPAllocator {
@@ -59,7 +59,7 @@ func newAllocatorWithMultiRanges(session storePkg.Session) allocator.IPAllocator
 		allocator.Range{RangeStart: net.IP{192, 168, 2, 0}, RangeEnd: net.IP{192, 168, 2, 3}, Subnet: mustSubnet("192.168.2.0/30")},
 	}
 	Expect(p.Canonicalize()).NotTo(HaveOccurred())
-	return allocator.NewIPAllocator(&p, testPoolName, session)
+	return allocator.NewIPAllocator(&p, nil, testPoolName, session)
 }
 
 func (t AllocatorTestCase) run(idx int, session storePkg.Session) (*current.IPConfig, error) {
@@ -79,7 +79,7 @@ func (t AllocatorTestCase) run(idx int, session storePkg.Session) (*current.IPCo
 	session.SetLastReservedIP(testPoolName, net.ParseIP(t.lastIP))
 
 	Expect(p.Canonicalize()).To(Succeed())
-	alloc := allocator.NewIPAllocator(&p, testPoolName, session)
+	alloc := allocator.NewIPAllocator(&p, nil, testPoolName, session)
 	return alloc.Allocate(testContainerID, testIFName, types.ReservationMetadata{})
 }
 
@@ -391,11 +391,55 @@ var _ = Describe("allocator", func() {
 				allocator.Range{Subnet: mustSubnet("192.168.1.4/30")},
 			}
 			Expect(p.Canonicalize()).NotTo(HaveOccurred())
-			a := allocator.NewIPAllocator(&p, testPoolName, session)
+			a := allocator.NewIPAllocator(&p, nil, testPoolName, session)
 			// get range iterator and do the first Next
 			checkAlloc(a, "0", net.IP{192, 168, 1, 1})
 			checkAlloc(a, "1", net.IP{192, 168, 1, 2})
 			checkAlloc(a, "2", net.IP{192, 168, 1, 5})
+		})
+	})
+	Context("point to point ranges", func() {
+		It("should allocate two IPs", func() {
+			session, err := storePkg.New(
+				filepath.Join(GinkgoT().TempDir(), "test_store")).Open(context.Background())
+			Expect(err).NotTo(HaveOccurred())
+			defer func() {
+				_ = session.Commit()
+			}()
+			p := allocator.RangeSet{
+				allocator.Range{Subnet: mustSubnet("192.168.1.0/31")},
+			}
+			Expect(p.Canonicalize()).NotTo(HaveOccurred())
+			a := allocator.NewIPAllocator(&p, nil, testPoolName, session)
+			// get range iterator and do the first Next
+			checkAlloc(a, "0", net.IP{192, 168, 1, 0})
+			checkAlloc(a, "1", net.IP{192, 168, 1, 1})
+		})
+	})
+	Context("IP address exclusion", func() {
+		It("should exclude IPs", func() {
+			session, err := storePkg.New(
+				filepath.Join(GinkgoT().TempDir(), "test_store")).Open(context.Background())
+			Expect(err).NotTo(HaveOccurred())
+			defer func() {
+				_ = session.Commit()
+			}()
+			p := allocator.RangeSet{
+				allocator.Range{Subnet: mustSubnet("192.168.0.0/29")},
+			}
+			Expect(p.Canonicalize()).NotTo(HaveOccurred())
+			e := allocator.RangeSet{
+				allocator.Range{Subnet: mustSubnet("192.168.0.0/29"),
+					RangeStart: net.ParseIP("192.168.0.2"), RangeEnd: net.ParseIP("192.168.0.3")},
+				allocator.Range{Subnet: mustSubnet("192.168.0.0/29"),
+					RangeStart: net.ParseIP("192.168.0.5"), RangeEnd: net.ParseIP("192.168.0.5")},
+			}
+			Expect(e.Canonicalize()).NotTo(HaveOccurred())
+			a := allocator.NewIPAllocator(&p, &e, testPoolName, session)
+			// get range iterator and do the first Next
+			checkAlloc(a, "0", net.IP{192, 168, 0, 1})
+			checkAlloc(a, "1", net.IP{192, 168, 0, 4})
+			checkAlloc(a, "2", net.IP{192, 168, 0, 6})
 		})
 	})
 })
