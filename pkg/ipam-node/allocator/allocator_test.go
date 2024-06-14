@@ -80,11 +80,11 @@ func (t AllocatorTestCase) run(idx int, session storePkg.Session) (*current.IPCo
 
 	Expect(p.Canonicalize()).To(Succeed())
 	alloc := allocator.NewIPAllocator(&p, nil, testPoolName, session)
-	return alloc.Allocate(testContainerID, testIFName, types.ReservationMetadata{})
+	return alloc.Allocate(testContainerID, testIFName, types.ReservationMetadata{}, nil)
 }
 
 func checkAlloc(a allocator.IPAllocator, id string, expectedIP net.IP) {
-	cfg, err := a.Allocate(id, testIFName, types.ReservationMetadata{})
+	cfg, err := a.Allocate(id, testIFName, types.ReservationMetadata{}, nil)
 	if expectedIP == nil {
 		ExpectWithOffset(1, err).To(HaveOccurred())
 		return
@@ -276,14 +276,14 @@ var _ = Describe("allocator", func() {
 			}()
 			alloc := mkAlloc(store)
 			for i := 2; i < 7; i++ {
-				res, err := alloc.Allocate(fmt.Sprintf("ID%d", i), testIFName, types.ReservationMetadata{})
+				res, err := alloc.Allocate(fmt.Sprintf("ID%d", i), testIFName, types.ReservationMetadata{}, nil)
 				Expect(err).ToNot(HaveOccurred())
 				s := fmt.Sprintf("192.168.1.%d/29", i)
 				Expect(s).To(Equal(res.Address.String()))
 				_, _ = fmt.Fprintln(GinkgoWriter, "got ip", res.Address.String())
 			}
 
-			x, err := alloc.Allocate("ID8", testIFName, types.ReservationMetadata{})
+			x, err := alloc.Allocate("ID8", testIFName, types.ReservationMetadata{}, nil)
 			_, _ = fmt.Fprintln(GinkgoWriter, "got ip", x)
 			Expect(err).To(HaveOccurred())
 		})
@@ -295,13 +295,13 @@ var _ = Describe("allocator", func() {
 				_ = store.Commit()
 			}()
 			alloc := mkAlloc(store)
-			res, err := alloc.Allocate(testContainerID, testIFName, types.ReservationMetadata{})
+			res, err := alloc.Allocate(testContainerID, testIFName, types.ReservationMetadata{}, nil)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(res.Address.String()).To(Equal("192.168.1.2/29"))
 
 			store.ReleaseReservationByID(testPoolName, testContainerID, testIFName)
 
-			res, err = alloc.Allocate(testContainerID, testIFName, types.ReservationMetadata{})
+			res, err = alloc.Allocate(testContainerID, testIFName, types.ReservationMetadata{}, nil)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(res.Address.String()).To(Equal("192.168.1.3/29"))
 		})
@@ -440,6 +440,51 @@ var _ = Describe("allocator", func() {
 			checkAlloc(a, "0", net.IP{192, 168, 0, 1})
 			checkAlloc(a, "1", net.IP{192, 168, 0, 4})
 			checkAlloc(a, "2", net.IP{192, 168, 0, 6})
+		})
+	})
+	Context("Static IP allocation", func() {
+		It("should allocate IP", func() {
+			session, err := storePkg.New(
+				filepath.Join(GinkgoT().TempDir(), "test_store")).Open(context.Background())
+			Expect(err).NotTo(HaveOccurred())
+			defer func() {
+				_ = session.Commit()
+			}()
+			p := allocator.RangeSet{
+				allocator.Range{Subnet: mustSubnet("192.168.0.0/24"), Gateway: net.ParseIP("192.168.0.10")},
+			}
+			// should ignore exclusions while allocating static IPs
+			e := allocator.RangeSet{
+				allocator.Range{Subnet: mustSubnet("192.168.0.0/24"),
+					RangeStart: net.ParseIP("192.168.0.33"), RangeEnd: net.ParseIP("192.168.0.33")},
+			}
+			staticIP := net.ParseIP("192.168.0.33")
+			Expect(p.Canonicalize()).NotTo(HaveOccurred())
+			Expect(e.Canonicalize()).NotTo(HaveOccurred())
+			a := allocator.NewIPAllocator(&p, &e, testPoolName, session)
+			cfg, err := a.Allocate("0", testIFName, types.ReservationMetadata{}, staticIP)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.Address.IP).To(Equal(staticIP))
+			Expect(cfg.Address.Mask).To(Equal(p[0].Subnet.Mask))
+			Expect(cfg.Gateway).To(Equal(p[0].Gateway))
+			_, err = a.Allocate("1", testIFName, types.ReservationMetadata{}, staticIP)
+			Expect(err).To(MatchError(ContainSubstring("ip address is already reserved")))
+		})
+		It("should fail if static IP is not in the allocator's subnet", func() {
+			session, err := storePkg.New(
+				filepath.Join(GinkgoT().TempDir(), "test_store")).Open(context.Background())
+			Expect(err).NotTo(HaveOccurred())
+			defer func() {
+				_ = session.Commit()
+			}()
+			p := allocator.RangeSet{
+				allocator.Range{Subnet: mustSubnet("192.168.0.0/24"), Gateway: net.ParseIP("192.168.0.10")},
+			}
+			staticIP := net.ParseIP("10.10.10.10")
+			Expect(p.Canonicalize()).NotTo(HaveOccurred())
+			a := allocator.NewIPAllocator(&p, nil, testPoolName, session)
+			_, err = a.Allocate("0", testIFName, types.ReservationMetadata{}, staticIP)
+			Expect(err).To(MatchError(ContainSubstring("can't find IP range")))
 		})
 	})
 })

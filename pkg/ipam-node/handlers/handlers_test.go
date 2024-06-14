@@ -106,12 +106,12 @@ var _ = Describe("Handlers", func() {
 		store.On("Open", mock.Anything).Return(session, nil)
 		poolManager.On("GetPoolByKey", testPoolName1).Return(getPoolConfigs()[testPoolName1])
 		poolManager.On("GetPoolByKey", testPoolName2).Return(getPoolConfigs()[testPoolName2])
-		allocators[testPoolName1].On("Allocate", "id1", "net0", mock.Anything).Return(
+		allocators[testPoolName1].On("Allocate", "id1", "net0", mock.Anything, mock.Anything).Return(
 			&current.IPConfig{
 				Gateway: net.ParseIP("192.168.0.1"),
 				Address: getIPWithMask("192.168.0.2/16"),
 			}, nil)
-		allocators[testPoolName2].On("Allocate", "id1", "net0", mock.Anything).Return(
+		allocators[testPoolName2].On("Allocate", "id1", "net0", mock.Anything, mock.Anything).Return(
 			&current.IPConfig{
 				Gateway: net.ParseIP("10.100.0.1"),
 				Address: getIPWithMask("10.100.0.2/16"),
@@ -133,6 +133,43 @@ var _ = Describe("Handlers", func() {
 				HaveField("Ip", "10.100.0.2/16"),
 				HaveField("Gateway", "10.100.0.1"),
 			)))
+	})
+	It("Allocate static IP", func() {
+		store.On("Open", mock.Anything).Return(session, nil)
+		poolManager.On("GetPoolByKey", testPoolName1).Return(getPoolConfigs()[testPoolName1])
+		allocators[testPoolName1].On("Allocate", "id1", "net0", mock.Anything, net.ParseIP("192.168.0.2")).Return(
+			&current.IPConfig{
+				Gateway: net.ParseIP("192.168.0.1"),
+				Address: getIPWithMask("192.168.0.2/16"),
+			}, nil)
+		session.On("Commit").Return(nil)
+		ipamParams := getValidIPAMParams()
+		ipamParams.Pools = []string{testPoolName1}
+		ipamParams.RequestedIps = []string{"192.168.0.2"}
+		resp, err := handlers.Allocate(ctx, &nodev1.AllocateRequest{Parameters: ipamParams})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resp.Allocations).To(HaveLen(1))
+		Expect(resp.Allocations).To(ContainElement(
+			And(
+				HaveField("Pool", testPoolName1),
+				HaveField("Ip", "192.168.0.2/16"),
+				HaveField("Gateway", "192.168.0.1"),
+			)))
+	})
+	It("Allocate failed: static IP was not allocated", func() {
+		store.On("Open", mock.Anything).Return(session, nil)
+		poolManager.On("GetPoolByKey", testPoolName1).Return(getPoolConfigs()[testPoolName1])
+		allocators[testPoolName1].On("Allocate", "id1", "net0", mock.Anything, mock.Anything).Return(
+			&current.IPConfig{
+				Gateway: net.ParseIP("192.168.0.1"),
+				Address: getIPWithMask("192.168.0.2/16"),
+			}, nil)
+		session.On("Cancel").Return()
+		ipamParams := getValidIPAMParams()
+		ipamParams.Pools = []string{testPoolName1}
+		ipamParams.RequestedIps = []string{"10.10.10.10"}
+		_, err := handlers.Allocate(ctx, &nodev1.AllocateRequest{Parameters: ipamParams})
+		Expect(err).To(MatchError(ContainSubstring("not all requested static IPs can be allocated")))
 	})
 	It("Allocation failed: unknown pool", func() {
 		store.On("Open", mock.Anything).Return(session, nil)
@@ -157,12 +194,12 @@ var _ = Describe("Handlers", func() {
 		store.On("Open", mock.Anything).Return(session, nil)
 		poolManager.On("GetPoolByKey", testPoolName1).Return(getPoolConfigs()[testPoolName1])
 		poolManager.On("GetPoolByKey", testPoolName2).Return(getPoolConfigs()[testPoolName2])
-		allocators[testPoolName1].On("Allocate", "id1", "net0", mock.Anything).Return(
+		allocators[testPoolName1].On("Allocate", "id1", "net0", mock.Anything, mock.Anything).Return(
 			&current.IPConfig{
 				Gateway: net.ParseIP("192.168.0.1"),
 				Address: getIPWithMask("192.168.0.2/16"),
 			}, nil)
-		allocators[testPoolName2].On("Allocate", "id1", "net0", mock.Anything).Return(
+		allocators[testPoolName2].On("Allocate", "id1", "net0", mock.Anything, mock.Anything).Return(
 			nil, allocatorPkg.ErrNoFreeAddresses)
 		session.On("Cancel").Return()
 
@@ -172,7 +209,7 @@ var _ = Describe("Handlers", func() {
 	It("Allocation failed: already allocated", func() {
 		store.On("Open", mock.Anything).Return(session, nil)
 		poolManager.On("GetPoolByKey", testPoolName1).Return(getPoolConfigs()[testPoolName1])
-		allocators[testPoolName1].On("Allocate", "id1", "net0", mock.Anything).Return(
+		allocators[testPoolName1].On("Allocate", "id1", "net0", mock.Anything, mock.Anything).Return(
 			nil, storePkg.ErrReservationAlreadyExist)
 		session.On("Cancel").Return()
 		_, err := handlers.Allocate(ctx, &nodev1.AllocateRequest{Parameters: getValidIPAMParams()})
@@ -182,12 +219,12 @@ var _ = Describe("Handlers", func() {
 		store.On("Open", mock.Anything).Return(session, nil)
 		poolManager.On("GetPoolByKey", testPoolName1).Return(getPoolConfigs()[testPoolName1])
 		poolManager.On("GetPoolByKey", testPoolName2).Return(getPoolConfigs()[testPoolName2])
-		allocators[testPoolName1].On("Allocate", "id1", "net0", mock.Anything).Return(
+		allocators[testPoolName1].On("Allocate", "id1", "net0", mock.Anything, mock.Anything).Return(
 			&current.IPConfig{
 				Gateway: net.ParseIP("192.168.0.1"),
 				Address: getIPWithMask("192.168.0.2/16"),
 			}, nil)
-		allocators[testPoolName2].On("Allocate", "id1", "net0", mock.Anything).Return(
+		allocators[testPoolName2].On("Allocate", "id1", "net0", mock.Anything, mock.Anything).Return(
 			&current.IPConfig{
 				Gateway: net.ParseIP("10.100.0.1"),
 				Address: getIPWithMask("10.100.0.2/16"),
