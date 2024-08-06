@@ -68,6 +68,7 @@ spec:
               gatewayIndex:
                 description: use IP with this index from the host prefix as a gateway,
                   skip gateway configuration if the value not set
+                format: int32
                 type: integer
               nodeSelector:
                 description: selector for nodes, if empty match all nodes
@@ -157,6 +158,7 @@ spec:
                 description: size of the network prefix for each host, the network
                   defined in "cidr" field will be split to multiple networks with
                   this size.
+                format: int32
                 type: integer
               staticAllocations:
                 description: static allocations for the pool

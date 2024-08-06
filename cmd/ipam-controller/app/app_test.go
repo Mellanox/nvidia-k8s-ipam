@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 
 	ipamv1alpha1 "github.com/Mellanox/nvidia-k8s-ipam/api/v1alpha1"
 	"github.com/Mellanox/nvidia-k8s-ipam/cmd/ipam-controller/app"
@@ -306,7 +307,6 @@ var _ = Describe("App", func() {
 
 	It("CIDRPool Basic tests", func(ctx SpecContext) {
 		By("Create valid pools")
-		pool1gatewayIndex := uint(1)
 		pool1 := &ipamv1alpha1.CIDRPool{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      pool1Name,
@@ -314,7 +314,7 @@ var _ = Describe("App", func() {
 			},
 			Spec: ipamv1alpha1.CIDRPoolSpec{
 				CIDR:                 "10.10.0.0/16",
-				GatewayIndex:         &pool1gatewayIndex,
+				GatewayIndex:         ptr.To[int32](1),
 				PerNodeNetworkPrefix: 24,
 				Exclusions: []ipamv1alpha1.ExcludeRange{
 					{StartIP: "10.10.1.22", EndIP: "10.10.1.30"},
@@ -329,7 +329,6 @@ var _ = Describe("App", func() {
 		}
 		Expect(k8sClient.Create(ctx, pool1)).NotTo(HaveOccurred())
 
-		pool2gatewayIndex := uint(1)
 		pool2 := &ipamv1alpha1.CIDRPool{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      pool2Name,
@@ -337,7 +336,7 @@ var _ = Describe("App", func() {
 			},
 			Spec: ipamv1alpha1.CIDRPoolSpec{
 				CIDR:                 "192.168.0.0/16",
-				GatewayIndex:         &pool2gatewayIndex,
+				GatewayIndex:         ptr.To[int32](1),
 				PerNodeNetworkPrefix: 31,
 			},
 		}
@@ -415,7 +414,6 @@ var _ = Describe("App", func() {
 
 		By("Create Pool3, with selector which ignores all nodes")
 		// ranges for two nodes only can be allocated
-		pool3gatewayIndex := uint(1)
 		pool3 := &ipamv1alpha1.CIDRPool{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      pool3Name,
@@ -423,7 +421,7 @@ var _ = Describe("App", func() {
 			},
 			Spec: ipamv1alpha1.CIDRPoolSpec{
 				CIDR:                 "10.10.0.0/24",
-				GatewayIndex:         &pool3gatewayIndex,
+				GatewayIndex:         ptr.To[int32](1),
 				PerNodeNetworkPrefix: 25,
 				NodeSelector: &corev1.NodeSelector{
 					NodeSelectorTerms: []corev1.NodeSelectorTerm{

@@ -38,10 +38,10 @@ type CIDRPoolSpec struct {
 	// and distributed between matching nodes
 	CIDR string `json:"cidr"`
 	// use IP with this index from the host prefix as a gateway, skip gateway configuration if the value not set
-	GatewayIndex *uint `json:"gatewayIndex,omitempty"`
+	GatewayIndex *int32 `json:"gatewayIndex,omitempty"`
 	// size of the network prefix for each host, the network defined in "cidr" field will be split to multiple networks
 	// with this size.
-	PerNodeNetworkPrefix uint `json:"perNodeNetworkPrefix"`
+	PerNodeNetworkPrefix int32 `json:"perNodeNetworkPrefix"`
 	// contains reserved IP addresses that should not be allocated by nv-ipam
 	Exclusions []ExcludeRange `json:"exclusions,omitempty"`
 	// static allocations for the pool

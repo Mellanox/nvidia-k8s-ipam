@@ -28,6 +28,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 
 	nodev1 "github.com/Mellanox/nvidia-k8s-ipam/api/grpc/nvidia/ipam/node/v1"
 	ipamv1alpha1 "github.com/Mellanox/nvidia-k8s-ipam/api/v1alpha1"
@@ -84,12 +85,11 @@ func createTestIPPools() {
 }
 
 func createTestCIDRPools() {
-	pool1GatewayIndex := uint(1)
 	pool1 := &ipamv1alpha1.CIDRPool{
 		ObjectMeta: metav1.ObjectMeta{Name: testPoolName1, Namespace: testNamespace},
 		Spec: ipamv1alpha1.CIDRPoolSpec{
 			CIDR:                 "192.100.0.0/16",
-			GatewayIndex:         &pool1GatewayIndex,
+			GatewayIndex:         ptr.To[int32](1),
 			PerNodeNetworkPrefix: 24,
 			Exclusions: []ipamv1alpha1.ExcludeRange{
 				{StartIP: "192.100.0.1", EndIP: "192.100.0.10"},

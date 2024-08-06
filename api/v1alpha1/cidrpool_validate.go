@@ -51,9 +51,20 @@ func (r *CIDRPool) validateCIDR() field.ErrorList {
 		return field.ErrorList{field.Invalid(
 			field.NewPath("spec", "cidr"), r.Spec.CIDR, "single IP prefixes are not supported")}
 	}
+
+	if r.Spec.GatewayIndex != nil && *r.Spec.GatewayIndex < 0 {
+		return field.ErrorList{field.Invalid(
+			field.NewPath("spec", "gatewayIndex"), r.Spec.GatewayIndex, "must not be negative")}
+	}
+
+	if r.Spec.PerNodeNetworkPrefix < 0 {
+		return field.ErrorList{field.Invalid(
+			field.NewPath("spec", "perNodeNetworkPrefix"), r.Spec.PerNodeNetworkPrefix, "must not be negative")}
+	}
+
 	if r.Spec.PerNodeNetworkPrefix == 0 ||
-		r.Spec.PerNodeNetworkPrefix >= uint(bitsTotal) ||
-		r.Spec.PerNodeNetworkPrefix < uint(setBits) {
+		r.Spec.PerNodeNetworkPrefix >= int32(bitsTotal) ||
+		r.Spec.PerNodeNetworkPrefix < int32(setBits) {
 		return field.ErrorList{field.Invalid(
 			field.NewPath("spec", "perNodeNetworkPrefix"),
 			r.Spec.PerNodeNetworkPrefix, "must be less or equal than network prefix size in the \"cidr\" field")}

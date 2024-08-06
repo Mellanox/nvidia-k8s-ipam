@@ -27,7 +27,7 @@ var _ = Describe("Helpers", func() {
 		func(subnet string, index int, gw string) {
 			_, network, err := net.ParseCIDR(subnet)
 			Expect(err).NotTo(HaveOccurred())
-			ret := v1alpha1.GetGatewayForSubnet(network, uint(index))
+			ret := v1alpha1.GetGatewayForSubnet(network, int32(index))
 			Expect(ret).To(Equal(gw))
 		},
 		Entry("ipv4 - start range", "192.168.1.0/24", 1, "192.168.1.1"),

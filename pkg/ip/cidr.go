@@ -178,9 +178,9 @@ func LastIP(network *net.IPNet) net.IP {
 // println(gen().String()) // 192.168.1.0/25
 // println(gen().String()) // 192.168.1.128/25
 // println(gen().String()) // <nil> - no more ranges available
-func GetSubnetGen(network *net.IPNet, prefixSize uint) func() *net.IPNet {
+func GetSubnetGen(network *net.IPNet, prefixSize int32) func() *net.IPNet {
 	networkOnes, netBitsTotal := network.Mask.Size()
-	if prefixSize < uint(networkOnes) || prefixSize > uint(netBitsTotal) {
+	if prefixSize < int32(networkOnes) || prefixSize > int32(netBitsTotal) {
 		return func() *net.IPNet { return nil }
 	}
 	isIPv6 := false
