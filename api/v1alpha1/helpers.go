@@ -27,7 +27,7 @@ import (
 // - subnet 192.168.0.0/24, index 10, gateway = 102.168.1.10
 // - subnet 192.168.1.2/31, index 0, gateway = 192.168.1.2 (point to point network can use network IP as a gateway)
 // - subnet 192.168.33.0/24, index 900, gateway = "" (invalid config, index too large)
-func GetGatewayForSubnet(subnet *net.IPNet, index uint) string {
+func GetGatewayForSubnet(subnet *net.IPNet, index int32) string {
 	setBits, bitsTotal := subnet.Mask.Size()
 	maxIndex := GetPossibleIPCount(subnet)
 

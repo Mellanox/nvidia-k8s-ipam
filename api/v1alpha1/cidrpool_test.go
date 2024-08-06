@@ -20,6 +20,7 @@ import (
 	gomegaTypes "github.com/onsi/gomega/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	"github.com/Mellanox/nvidia-k8s-ipam/api/v1alpha1"
 )
@@ -39,10 +40,6 @@ func validatePoolAndCheckErr(pool *v1alpha1.CIDRPool, isValid bool, errMatcher .
 	}
 }
 
-func getUintPtr(i uint) *uint {
-	return &i
-}
-
 var _ = Describe("CIDRPool", func() {
 	It("Valid IPv4 pool", func() {
 		cidrPool := v1alpha1.CIDRPool{
@@ -50,7 +47,7 @@ var _ = Describe("CIDRPool", func() {
 			Spec: v1alpha1.CIDRPoolSpec{
 				CIDR:                 "192.168.0.0/16",
 				PerNodeNetworkPrefix: 24,
-				GatewayIndex:         getUintPtr(100),
+				GatewayIndex:         ptr.To[int32](100),
 				Exclusions: []v1alpha1.ExcludeRange{
 					{StartIP: "192.168.0.10", EndIP: "192.168.0.20"},
 					{StartIP: "192.168.0.25", EndIP: "192.168.0.25"},
@@ -78,7 +75,7 @@ var _ = Describe("CIDRPool", func() {
 			Spec: v1alpha1.CIDRPoolSpec{
 				CIDR:                 "fdf8:6aef:d1fe::/48",
 				PerNodeNetworkPrefix: 120,
-				GatewayIndex:         getUintPtr(5),
+				GatewayIndex:         ptr.To[int32](5),
 				Exclusions: []v1alpha1.ExcludeRange{
 					{StartIP: "fdf8:6aef:d1fe::5", EndIP: "fdf8:6aef:d1fe::5"},
 				},
@@ -98,7 +95,7 @@ var _ = Describe("CIDRPool", func() {
 		validatePoolAndCheckErr(&cidrPool, true)
 	})
 	DescribeTable("CIDR",
-		func(cidr string, prefix uint, isValid bool) {
+		func(cidr string, prefix int32, isValid bool) {
 			cidrPool := v1alpha1.CIDRPool{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
 				Spec: v1alpha1.CIDRPoolSpec{
@@ -107,15 +104,15 @@ var _ = Describe("CIDRPool", func() {
 				}}
 			validatePoolAndCheckErr(&cidrPool, isValid, ContainSubstring("spec.cidr"))
 		},
-		Entry("empty", "", uint(30), false),
-		Entry("invalid value", "aaaa", uint(30), false),
-		Entry("/32", "192.168.1.1/32", uint(32), false),
-		Entry("/128", "2001:db8:3333:4444::0/128", uint(128), false),
-		Entry("valid ipv4", "192.168.1.0/24", uint(30), true),
-		Entry("valid ipv6", "2001:db8:3333:4444::0/64", uint(120), true),
+		Entry("empty", "", int32(30), false),
+		Entry("invalid value", "aaaa", int32(30), false),
+		Entry("/32", "192.168.1.1/32", int32(32), false),
+		Entry("/128", "2001:db8:3333:4444::0/128", int32(128), false),
+		Entry("valid ipv4", "192.168.1.0/24", int32(30), true),
+		Entry("valid ipv6", "2001:db8:3333:4444::0/64", int32(120), true),
 	)
 	DescribeTable("PerNodeNetworkPrefix",
-		func(cidr string, prefix uint, isValid bool) {
+		func(cidr string, prefix int32, isValid bool) {
 			cidrPool := v1alpha1.CIDRPool{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
 				Spec: v1alpha1.CIDRPoolSpec{
@@ -124,12 +121,13 @@ var _ = Describe("CIDRPool", func() {
 				}}
 			validatePoolAndCheckErr(&cidrPool, isValid, ContainSubstring("spec.perNodeNetworkPrefix"))
 		},
-		Entry("not set", "192.168.0.0/16", uint(0), false),
-		Entry("larger than CIDR", "192.168.0.0/16", uint(8), false),
-		Entry("smaller than 31 for IPv4 pool", "192.168.0.0/16", uint(32), false),
-		Entry("smaller than 127 for IPv6 pool", "2001:db8:3333:4444::0/64", uint(128), false),
-		Entry("match CIDR prefix size - ipv4", "192.168.0.0/16", uint(16), true),
-		Entry("match CIDR prefix size - ipv6", "2001:db8:3333:4444::0/64", uint(64), true),
+		Entry("not set", "192.168.0.0/16", int32(0), false),
+		Entry("negative", "192.168.0.0/16", int32(-10), false),
+		Entry("larger than CIDR", "192.168.0.0/16", int32(8), false),
+		Entry("smaller than 31 for IPv4 pool", "192.168.0.0/16", int32(32), false),
+		Entry("smaller than 127 for IPv6 pool", "2001:db8:3333:4444::0/64", int32(128), false),
+		Entry("match CIDR prefix size - ipv4", "192.168.0.0/16", int32(16), true),
+		Entry("match CIDR prefix size - ipv6", "2001:db8:3333:4444::0/64", int32(64), true),
 	)
 	DescribeTable("NodeSelector",
 		func(nodeSelector *corev1.NodeSelector, isValid bool, errMatcher ...gomegaTypes.GomegaMatcher) {
@@ -156,7 +154,7 @@ var _ = Describe("CIDRPool", func() {
 		}, false, ContainSubstring("spec.nodeSelectorTerms[0].matchExpressions[0].operator")),
 	)
 	DescribeTable("GatewayIndex",
-		func(gatewayIndex uint, isValid bool, errMatcher ...gomegaTypes.GomegaMatcher) {
+		func(gatewayIndex int32, isValid bool, errMatcher ...gomegaTypes.GomegaMatcher) {
 			cidrPool := v1alpha1.CIDRPool{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
 				Spec: v1alpha1.CIDRPoolSpec{
@@ -167,9 +165,10 @@ var _ = Describe("CIDRPool", func() {
 			}
 			validatePoolAndCheckErr(&cidrPool, isValid, ContainSubstring("spec.gatewayIndex"))
 		},
-		Entry("too large", uint(255), false),
-		Entry("index 1 is valid for point to point", uint(1), true),
-		Entry("index 2 is valid for point to point", uint(2), true),
+		Entry("negative", int32(-10), false),
+		Entry("too large", int32(255), false),
+		Entry("index 1 is valid for point to point", int32(1), true),
+		Entry("index 2 is valid for point to point", int32(2), true),
 	)
 	DescribeTable("Exclusions",
 		func(exclusions []v1alpha1.ExcludeRange, isValid bool, errMatcher ...gomegaTypes.GomegaMatcher) {
@@ -273,7 +272,7 @@ var _ = Describe("CIDRPoolAllocation", func() {
 			Spec: v1alpha1.CIDRPoolSpec{
 				CIDR:                 "192.168.0.0/16",
 				PerNodeNetworkPrefix: 24,
-				GatewayIndex:         getUintPtr(100),
+				GatewayIndex:         ptr.To[int32](100),
 				StaticAllocations: []v1alpha1.CIDRPoolStaticAllocation{
 					{NodeName: "node1", Prefix: "192.168.1.0/24", Gateway: "192.168.1.10"},
 					{NodeName: "node2", Prefix: "192.168.2.0/24"},

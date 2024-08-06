@@ -116,7 +116,7 @@ func (in *CIDRPoolSpec) DeepCopyInto(out *CIDRPoolSpec) {
 	*out = *in
 	if in.GatewayIndex != nil {
 		in, out := &in.GatewayIndex, &out.GatewayIndex
-		*out = new(uint)
+		*out = new(int32)
 		**out = **in
 	}
 	if in.Exclusions != nil {
