@@ -125,6 +125,13 @@ message AllocationInfo {
   string gateway = 3;
   // type of the pool which is refered by the name in the pools field
   PoolType pool_type = 4;
+  // list of static routes
+  repeated Route routes = 5;
+}
+
+message Route {
+  // Static route destination in CIDR format
+  string dest = 1;
 }
 
 // IsAllocatedReply contains reply for IsAllocated rpc call

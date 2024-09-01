@@ -14,10 +14,12 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"time"
 
 	cniTypes "github.com/containernetworking/cni/pkg/types"
@@ -31,6 +33,7 @@ import (
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/allocator"
 	storePkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/store"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/types"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
 )
 
 // Allocate is the handler for Allocate GRPC endpoint
@@ -62,6 +65,11 @@ func (h *Handlers) Allocate(ctx context.Context, req *nodev1.AllocateRequest) (*
 		}
 		if r.Gateway != nil {
 			allocationInfo.Gateway = r.Gateway.String()
+			routes := make([]*nodev1.Route, 0)
+			for _, route := range r.Routes {
+				routes = append(routes, &nodev1.Route{Dest: route.String()})
+			}
+			allocationInfo.Routes = routes
 		}
 		resp.Allocations = append(resp.Allocations, allocationInfo)
 	}
@@ -72,6 +80,7 @@ func (h *Handlers) Allocate(ctx context.Context, req *nodev1.AllocateRequest) (*
 type PoolAlloc struct {
 	Pool string
 	*current.IPConfig
+	Routes []net.IPNet
 }
 
 func (h *Handlers) allocate(reqLog logr.Logger,
@@ -191,38 +200,99 @@ func (h *Handlers) allocateInPool(poolName string, reqLog logr.Logger,
 	result, err := alloc.Allocate(params.CniContainerid, params.CniIfname, allocMeta, selectedStaticIP)
 	if err != nil {
 		poolLog.Error(err, "failed to allocate IP address")
-		if errors.Is(err, storePkg.ErrReservationAlreadyExist) {
-			return PoolAlloc{}, status.Errorf(codes.AlreadyExists,
-				"allocation already exist in the pool \"%s\", poolType \"%s\"", poolName, poolType)
-		}
-		if errors.Is(err, allocator.ErrNoFreeAddresses) {
-			return PoolAlloc{}, status.Errorf(codes.ResourceExhausted,
-				"no free addresses in the pool \"%s\", poolType \"%s\"",
-				poolName, poolType)
-		}
-		if errors.Is(err, storePkg.ErrIPAlreadyReserved) {
-			return PoolAlloc{}, status.Errorf(codes.ResourceExhausted,
-				"requested IP is already reserved in the pool \"%s\", poolType \"%s\"",
-				poolName, poolType)
-		}
-		return PoolAlloc{}, status.Errorf(codes.Internal,
-			"failed to allocate IP address in pool \"%s\", poolType \"%s\"", poolName, poolType)
+		return PoolAlloc{}, specificError(err, poolName, poolType)
 	}
 	if params.Features != nil && params.Features.AllocateDefaultGateway {
 		// TODO (ykulazhenkov): do we want to keep gateway in this case?
 		// if we will return gateway here, the container will have same IP as interface address and as gateway
 		result.Gateway = nil
 	}
-
+	routes, err := getRoutes(result.Gateway, poolCfg.Routes, poolCfg.DefaultGateway)
+	if err != nil {
+		return PoolAlloc{}, err
+	}
 	poolLog.Info("IP address allocated", "allocation", result.String())
 	return PoolAlloc{
 		Pool:     poolName,
 		IPConfig: result,
+		Routes:   routes,
 	}, nil
+}
+
+func specificError(err error, poolName string, poolType string) error {
+	if errors.Is(err, storePkg.ErrReservationAlreadyExist) {
+		return status.Errorf(codes.AlreadyExists,
+			"allocation already exist in the pool \"%s\", poolType \"%s\"", poolName, poolType)
+	}
+	if errors.Is(err, allocator.ErrNoFreeAddresses) {
+		return status.Errorf(codes.ResourceExhausted,
+			"no free addresses in the pool \"%s\", poolType \"%s\"",
+			poolName, poolType)
+	}
+	if errors.Is(err, storePkg.ErrIPAlreadyReserved) {
+		return status.Errorf(codes.ResourceExhausted,
+			"requested IP is already reserved in the pool \"%s\", poolType \"%s\"",
+			poolName, poolType)
+	}
+	return status.Errorf(codes.Internal,
+		"failed to allocate IP address in pool \"%s\", poolType \"%s\"", poolName, poolType)
 }
 
 func poolCfgError(reqLog logr.Logger, pool, poolType, reason string) error {
 	reqLog.Error(nil, "invalid pool config", "pool", pool, "poolType", poolType,
 		"reason", reason)
 	return status.Errorf(codes.Internal, "invalid config for pool \"%s\", poolType \"%s\"", pool, poolType)
+}
+
+func getRoutes(gateway net.IP, routesCfg []pool.Route, defaultGateway bool) ([]net.IPNet, error) {
+	routes := make([]net.IPNet, 0)
+	if gateway == nil {
+		return routes, nil
+	}
+	for _, r := range routesCfg {
+		_, ipNet, err := net.ParseCIDR(r.Dst)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument,
+				"unexpected Route destination format, received value: %s, error: %s",
+				r.Dst, err.Error())
+		}
+		routes = append(routes, *ipNet)
+	}
+	if defaultGateway {
+		routes = append(routes, createDefaultRoute(gateway))
+	}
+
+	return sortAndDedupIPNets(routes), nil
+}
+
+func createDefaultRoute(gateway net.IP) net.IPNet {
+	if gateway.To4() != nil {
+		// IPv4 default route
+		return net.IPNet{
+			IP:   net.IPv4(0, 0, 0, 0),
+			Mask: net.CIDRMask(0, 32), // /0 for IPv4
+		}
+	}
+	return net.IPNet{
+		IP:   net.IPv6zero,         // :: (IPv6 default)
+		Mask: net.CIDRMask(0, 128), // /0 for IPv6
+	}
+}
+
+// Function to sort and remove duplicates from a slice of net.IPNet
+func sortAndDedupIPNets(slice []net.IPNet) []net.IPNet {
+	if len(slice) == 0 {
+		return slice
+	}
+
+	slices.SortFunc(slice, func(a, b net.IPNet) int {
+		if !a.IP.Equal(b.IP) {
+			return bytes.Compare(a.IP, b.IP) // Compare IP addresses
+		}
+		return bytes.Compare(a.Mask, b.Mask) // Compare subnet masks if IPs are equal
+	})
+
+	return slices.CompactFunc(slice, func(a, b net.IPNet) bool {
+		return a.IP.Equal(b.IP) && bytes.Equal(a.Mask, b.Mask)
+	})
 }

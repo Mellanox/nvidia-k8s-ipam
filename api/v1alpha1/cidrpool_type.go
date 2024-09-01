@@ -48,6 +48,10 @@ type CIDRPoolSpec struct {
 	StaticAllocations []CIDRPoolStaticAllocation `json:"staticAllocations,omitempty"`
 	// selector for nodes, if empty match all nodes
 	NodeSelector *corev1.NodeSelector `json:"nodeSelector,omitempty"`
+	// if true, add gateway as default gateway in the routes list
+	DefaultGateway bool `json:"defautGateway,omitempty"`
+	// static routes list. The gateway used will according to the node allocation.
+	Routes []Route `json:"routes,omitempty"`
 }
 
 // CIDRPoolStatus contains the IP prefixes allocated to nodes

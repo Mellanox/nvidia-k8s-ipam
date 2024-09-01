@@ -94,6 +94,85 @@ var _ = Describe("CIDRPool", func() {
 		}
 		validatePoolAndCheckErr(&cidrPool, true)
 	})
+	It("Invalid - no gatewayIndex, defaultGateway true", func() {
+		cidrPool := v1alpha1.CIDRPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.CIDRPoolSpec{
+				CIDR:                 "fdf8:6aef:d1fe::/48",
+				PerNodeNetworkPrefix: 120,
+				DefaultGateway:       true,
+			},
+		}
+		validatePoolAndCheckErr(&cidrPool, false, ContainSubstring("spec.defaultGateway"))
+	})
+	It("Valid - routes", func() {
+		cidrPool := v1alpha1.CIDRPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.CIDRPoolSpec{
+				CIDR:                 "192.168.0.0/16",
+				PerNodeNetworkPrefix: 24,
+				GatewayIndex:         ptr.To[int32](100),
+				Routes: []v1alpha1.Route{
+					{
+						Dst: "5.5.0.0/16",
+					},
+					{
+						Dst: "10.7.1.0/24",
+					},
+				},
+			},
+		}
+		validatePoolAndCheckErr(&cidrPool, true)
+	})
+	It("Invalid - routes not CIDR", func() {
+		cidrPool := v1alpha1.CIDRPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.CIDRPoolSpec{
+				CIDR:                 "192.168.0.0/16",
+				PerNodeNetworkPrefix: 24,
+				GatewayIndex:         ptr.To[int32](100),
+				Routes: []v1alpha1.Route{
+					{
+						Dst: "5.5.0.0",
+					},
+				},
+			},
+		}
+		validatePoolAndCheckErr(&cidrPool, false, ContainSubstring("spec.routes"))
+	})
+	It("Invalid - routes without GatewayIndex", func() {
+		cidrPool := v1alpha1.CIDRPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.CIDRPoolSpec{
+				CIDR:                 "192.168.0.0/16",
+				PerNodeNetworkPrefix: 24,
+				Routes: []v1alpha1.Route{
+					{
+						Dst: "5.5.0.0",
+					},
+				},
+			},
+		}
+		validatePoolAndCheckErr(&cidrPool, false, ContainSubstring("spec.routes"))
+	})
+	It("Invalid - routes not same address family", func() {
+		ipPool := v1alpha1.CIDRPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.CIDRPoolSpec{
+				CIDR:                 "192.168.0.0/16",
+				PerNodeNetworkPrefix: 24,
+				Routes: []v1alpha1.Route{
+					{
+						Dst: "2001:db8:3333:4444::0/64",
+					},
+				},
+			},
+		}
+		Expect(ipPool.Validate().ToAggregate().Error()).
+			To(
+				ContainSubstring("spec.routes"),
+			)
+	})
 	DescribeTable("CIDR",
 		func(cidr string, prefix int32, isValid bool) {
 			cidrPool := v1alpha1.CIDRPool{

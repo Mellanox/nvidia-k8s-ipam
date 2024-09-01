@@ -182,6 +182,15 @@ func grpcRespToResult(resp *nodev1.AllocateResponse) (*current.Result, error) {
 				return nil, logErr(fmt.Sprintf("unexpected Gateway address format, received value: %s", alloc.Gateway))
 			}
 			ipConfig.Gateway = gwIP
+			for _, r := range alloc.Routes {
+				_, ipNet, err := net.ParseCIDR(r.Dest)
+				if err != nil {
+					return nil, logErr(fmt.Sprintf("unexpected Route destination format, received value: %s, error: %s",
+						r.Dest, err.Error()))
+				}
+				route := &cnitypes.Route{Dst: *ipNet, GW: ipConfig.Gateway}
+				result.Routes = append(result.Routes, route)
+			}
 		}
 
 		result.IPs = append(result.IPs, ipConfig)
