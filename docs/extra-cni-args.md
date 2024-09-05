@@ -24,7 +24,7 @@ metadata:
     k8s.v1.cni.cncf.io/networks: '
       [{"name": "mynet",
         "cni-args":
-            {"poolName": ["pool1"],
+            {"poolNames": ["pool1"],
              "poolType": "cidrpool",
              "allocateDefaultGateway": true}}]'
 spec:
