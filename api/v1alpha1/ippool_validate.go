@@ -71,5 +71,21 @@ func (r *IPPool) Validate() field.ErrorList {
 	if r.Spec.NodeSelector != nil {
 		errList = append(errList, validateNodeSelector(r.Spec.NodeSelector, field.NewPath("spec"))...)
 	}
+
+	if r.Spec.Gateway == "" {
+		if r.Spec.DefaultGateway {
+			errList = append(errList, field.Invalid(
+				field.NewPath("spec", "defaultGateway"), r.Spec.DefaultGateway,
+				"cannot be true if spec.gateway is not set"))
+		}
+		if len(r.Spec.Routes) > 0 {
+			errList = append(errList, field.Invalid(
+				field.NewPath("spec", "routes"), r.Spec.Routes,
+				"cannot be set if spec.gateway is not set"))
+		}
+	}
+
+	errList = append(errList, validateRoutes(r.Spec.Routes, network, r.Spec.DefaultGateway, field.NewPath("spec"))...)
+
 	return errList
 }

@@ -55,10 +55,16 @@ func getPoolConfigs() map[string]*pool.Pool {
 			Gateway: "192.168.0.1",
 		},
 		testPoolName2: {Name: testPoolName2,
-			Subnet:  "10.100.0.0/16",
-			StartIP: "10.100.0.2",
-			EndIP:   "10.100.0.254",
-			Gateway: "10.100.0.1",
+			Subnet:         "10.100.0.0/16",
+			StartIP:        "10.100.0.2",
+			EndIP:          "10.100.0.254",
+			Gateway:        "10.100.0.1",
+			DefaultGateway: true,
+			Routes: []pool.Route{
+				{
+					Dst: "5.5.0.0/16",
+				},
+			},
 		},
 	}
 }
@@ -126,13 +132,27 @@ var _ = Describe("Handlers", func() {
 				HaveField("Pool", testPoolName1),
 				HaveField("Ip", "192.168.0.2/16"),
 				HaveField("Gateway", "192.168.0.1"),
+				HaveField("Routes", HaveLen(0)),
 			)))
 		Expect(resp.Allocations).To(ContainElement(
 			And(
 				HaveField("Pool", testPoolName2),
 				HaveField("Ip", "10.100.0.2/16"),
 				HaveField("Gateway", "10.100.0.1"),
+				HaveField("Routes", HaveLen(2)),
 			)))
+		for _, alloc := range resp.Allocations {
+			if len(alloc.Routes) > 0 {
+				Expect(alloc.Routes).To(ContainElement(
+					And(
+						HaveField("Dest", "5.5.0.0/16"),
+					)))
+				Expect(alloc.Routes).To(ContainElement(
+					And(
+						HaveField("Dest", "0.0.0.0/0"),
+					)))
+			}
+		}
 	})
 	It("Allocate static IP", func() {
 		store.On("Open", mock.Anything).Return(session, nil)
@@ -154,6 +174,44 @@ var _ = Describe("Handlers", func() {
 				HaveField("Pool", testPoolName1),
 				HaveField("Ip", "192.168.0.2/16"),
 				HaveField("Gateway", "192.168.0.1"),
+			)))
+	})
+	It("Allocate duplicate static routes", func() {
+		store.On("Open", mock.Anything).Return(session, nil)
+		allocators[testPoolName1].On("Allocate", "id1", "net0", mock.Anything, net.ParseIP("192.168.0.2")).Return(
+			&current.IPConfig{
+				Gateway: net.ParseIP("192.168.0.1"),
+				Address: getIPWithMask("192.168.0.2/16"),
+			}, nil)
+		pool1Cfg := getPoolConfigs()[testPoolName1]
+		pool1Cfg.DefaultGateway = true
+		pool1Cfg.Routes = []pool.Route{
+			{
+				Dst: "5.5.0.0/16",
+			},
+			{
+				Dst: "5.5.0.0/16",
+			},
+			{
+				Dst: "0.0.0.0/0",
+			},
+		}
+		poolManager.On("GetPoolByKey", testPoolName1).Return(pool1Cfg)
+		session.On("Commit").Return(nil)
+		ipamParams := getValidIPAMParams()
+		ipamParams.Pools = []string{testPoolName1}
+		ipamParams.RequestedIps = []string{"192.168.0.2"}
+		resp, err := handlers.Allocate(ctx, &nodev1.AllocateRequest{Parameters: ipamParams})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resp.Allocations).To(HaveLen(1))
+		Expect(resp.Allocations[0].Routes).To(HaveLen(2))
+		Expect(resp.Allocations[0].Routes).To(ContainElement(
+			And(
+				HaveField("Dest", "5.5.0.0/16"),
+			)))
+		Expect(resp.Allocations[0].Routes).To(ContainElement(
+			And(
+				HaveField("Dest", "0.0.0.0/0"),
 			)))
 	})
 	It("Allocate failed: static IP was not allocated", func() {
@@ -240,6 +298,26 @@ var _ = Describe("Handlers", func() {
 		cFunc()
 		_, err := handlers.Allocate(ctx, &nodev1.AllocateRequest{Parameters: getValidIPAMParams()})
 		Expect(status.Code(err) == codes.Canceled).To(BeTrue())
+	})
+	It("Allocation failed: bad static route", func() {
+		store.On("Open", mock.Anything).Return(session, nil)
+		pool2Cfg := getPoolConfigs()[testPoolName2]
+		pool2Cfg.Routes[0].Dst = "foo"
+		poolManager.On("GetPoolByKey", testPoolName2).Return(pool2Cfg)
+		poolManager.On("GetPoolByKey", testPoolName1).Return(getPoolConfigs()[testPoolName1])
+		allocators[testPoolName1].On("Allocate", "id1", "net0", mock.Anything, mock.Anything).Return(
+			&current.IPConfig{
+				Gateway: net.ParseIP("192.168.0.1"),
+				Address: getIPWithMask("192.168.0.2/16"),
+			}, nil)
+		allocators[testPoolName2].On("Allocate", "id1", "net0", mock.Anything, mock.Anything).Return(
+			&current.IPConfig{
+				Gateway: net.ParseIP("10.100.0.1"),
+				Address: getIPWithMask("10.100.0.2/16"),
+			}, nil)
+		session.On("Cancel").Return()
+		_, err := handlers.Allocate(ctx, &nodev1.AllocateRequest{Parameters: getValidIPAMParams()})
+		Expect(status.Code(err) == codes.InvalidArgument).To(BeTrue())
 	})
 	It("IsAllocated succeed", func() {
 		store.On("Open", mock.Anything).Return(session, nil)

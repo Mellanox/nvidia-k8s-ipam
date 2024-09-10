@@ -19,3 +19,9 @@ type ExcludeRange struct {
 	StartIP string `json:"startIP"`
 	EndIP   string `json:"endIP"`
 }
+
+// Route contains static route parameters
+type Route struct {
+	// The destination of the route, in CIDR notation
+	Dst string `json:"dst"`
+}

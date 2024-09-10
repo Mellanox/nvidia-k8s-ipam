@@ -49,6 +49,10 @@ spec:
                   is define in perNodeNetworkPrefix) and distributed between matching
                   nodes
                 type: string
+              defautGateway:
+                description: if true, add gateway as default gateway in the routes
+                  list
+                type: boolean
               exclusions:
                 description: contains reserved IP addresses that should not be allocated
                   by nv-ipam
@@ -160,6 +164,19 @@ spec:
                   this size.
                 format: int32
                 type: integer
+              routes:
+                description: static routes list. The gateway used will according to
+                  the node allocation.
+                items:
+                  description: Route contains static route parameters
+                  properties:
+                    dst:
+                      description: The destination of the route, in CIDR notation
+                      type: string
+                  required:
+                  - dst
+                  type: object
+                type: array
               staticAllocations:
                 description: static allocations for the pool
                 items:

@@ -156,4 +156,129 @@ var _ = Describe("Validate", func() {
 				ContainSubstring("spec.nodeSelector"),
 			)
 	})
+	It("Invalid - no Gateway, defaultGateway true", func() {
+		ipPool := v1alpha1.IPPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.IPPoolSpec{
+				Subnet:           "192.168.0.0/16",
+				PerNodeBlockSize: 128,
+				DefaultGateway:   true,
+			},
+		}
+		Expect(ipPool.Validate().ToAggregate().Error()).
+			To(
+				ContainSubstring("spec.defaultGateway"),
+			)
+	})
+	It("Valid - routes", func() {
+		ipPool := v1alpha1.IPPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.IPPoolSpec{
+				Subnet:           "192.168.0.0/16",
+				PerNodeBlockSize: 128,
+				Gateway:          "192.168.0.1",
+				Routes: []v1alpha1.Route{
+					{
+						Dst: "5.5.0.0/16",
+					},
+					{
+						Dst: "10.7.1.0/24",
+					},
+				},
+			},
+		}
+		Expect(ipPool.Validate()).To(BeEmpty())
+	})
+	It("Invalid - routes without Gateway", func() {
+		ipPool := v1alpha1.IPPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.IPPoolSpec{
+				Subnet:           "192.168.0.0/16",
+				PerNodeBlockSize: 128,
+				Routes: []v1alpha1.Route{
+					{
+						Dst: "5.5.0.0/16",
+					},
+				},
+			},
+		}
+		Expect(ipPool.Validate().ToAggregate().Error()).
+			To(
+				ContainSubstring("spec.routes"),
+			)
+	})
+	It("Invalid - routes not CIDR", func() {
+		ipPool := v1alpha1.IPPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.IPPoolSpec{
+				Subnet:           "192.168.0.0/16",
+				PerNodeBlockSize: 128,
+				Routes: []v1alpha1.Route{
+					{
+						Dst: "5.5.0.0",
+					},
+				},
+			},
+		}
+		Expect(ipPool.Validate().ToAggregate().Error()).
+			To(
+				ContainSubstring("spec.routes"),
+			)
+	})
+	It("Invalid - routes not same address family", func() {
+		ipPool := v1alpha1.IPPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.IPPoolSpec{
+				Subnet:           "192.168.0.0/16",
+				PerNodeBlockSize: 128,
+				Routes: []v1alpha1.Route{
+					{
+						Dst: "2001:db8:3333:4444::0/64",
+					},
+				},
+			},
+		}
+		Expect(ipPool.Validate().ToAggregate().Error()).
+			To(
+				ContainSubstring("spec.routes"),
+			)
+	})
+	It("Invalid - default routes with defaultGateway true - IPv6", func() {
+		ipPool := v1alpha1.IPPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.IPPoolSpec{
+				Subnet:           "2001:db8:3333:4444::0/64",
+				PerNodeBlockSize: 128,
+				DefaultGateway: true,
+				Routes: []v1alpha1.Route{
+					{
+						Dst: "::/0",
+					},
+				},
+			},
+		}
+		Expect(ipPool.Validate().ToAggregate().Error()).
+			To(
+				ContainSubstring("spec.routes"),
+			)
+	})
+	It("Invalid - default routes with defaultGateway true - IPv4", func() {
+		ipPool := v1alpha1.IPPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.IPPoolSpec{
+				Subnet:           "192.168.0.0/16",
+				PerNodeBlockSize: 128,
+				DefaultGateway: true,
+				Routes: []v1alpha1.Route{
+					{
+						Dst: "0.0.0.0/0",
+					},
+				},
+			},
+		}
+		Expect(ipPool.Validate().ToAggregate().Error()).
+			To(
+				ContainSubstring("spec.routes"),
+			)
+	})
 })

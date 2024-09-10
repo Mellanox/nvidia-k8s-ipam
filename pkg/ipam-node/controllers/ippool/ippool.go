@@ -58,15 +58,21 @@ func (r *IPPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			for _, e := range ipPool.Spec.Exclusions {
 				exclusions = append(exclusions, pool.ExclusionRange{StartIP: e.StartIP, EndIP: e.EndIP})
 			}
-			ipPool := &pool.Pool{
+			routes := make([]pool.Route, 0, len(ipPool.Spec.Routes))
+			for _, r := range ipPool.Spec.Routes {
+				routes = append(routes, pool.Route{Dst: r.Dst})
+			}
+			pool := &pool.Pool{
 				Name:       ipPool.Name,
 				Subnet:     ipPool.Spec.Subnet,
 				Gateway:    ipPool.Spec.Gateway,
 				StartIP:    alloc.StartIP,
 				EndIP:      alloc.EndIP,
 				Exclusions: exclusions,
+				Routes:     routes,
 			}
-			r.PoolManager.UpdatePool(poolKey, ipPool)
+			pool.DefaultGateway = ipPool.Spec.DefaultGateway
+			r.PoolManager.UpdatePool(poolKey, pool)
 			found = true
 			break
 		}

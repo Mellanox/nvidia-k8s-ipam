@@ -33,6 +33,20 @@ func (r *CIDRPool) Validate() field.ErrorList {
 	if r.Spec.NodeSelector != nil {
 		errList = append(errList, validateNodeSelector(r.Spec.NodeSelector, field.NewPath("spec"))...)
 	}
+	if r.Spec.GatewayIndex == nil {
+		if r.Spec.DefaultGateway {
+			errList = append(errList, field.Invalid(
+				field.NewPath("spec", "defaultGateway"), r.Spec.DefaultGateway,
+				"cannot be true if spec.gatewayIndex is not set"))
+		}
+		if len(r.Spec.Routes) > 0 {
+			errList = append(errList, field.Invalid(
+				field.NewPath("spec", "routes"), r.Spec.Routes,
+				"cannot be set if spec.gatewayIndex is not set"))
+		}
+	}
+	_, network, _ := net.ParseCIDR(r.Spec.CIDR)
+	errList = append(errList, validateRoutes(r.Spec.Routes, network, r.Spec.DefaultGateway, field.NewPath("spec"))...)
 	return errList
 }
 

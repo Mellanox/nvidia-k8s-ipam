@@ -107,10 +107,45 @@ var _ = Describe("plugin tests", func() {
 					Ip:       "192.168.1.10/24",
 					Gateway:  "192.168.1.1",
 					PoolType: nodev1.PoolType_POOL_TYPE_IPPOOL,
+					Routes: []*nodev1.Route{
+						{
+							Dest: "5.5.0.0/16",
+						},
+					},
 				}},
 			}, nil)
 			err := p.CmdAdd(args)
 			Expect(err).ToNot(HaveOccurred())
+		})
+		It("executes failed - non cidr route", func() {
+			mockConfLoader.On("LoadConf", args).Return(testConf, nil)
+			mockDaemonClient.On("Allocate", mock.Anything, &nodev1.AllocateRequest{
+				Parameters: &nodev1.IPAMParameters{
+					Pools:          []string{"my-pool"},
+					PoolType:       nodev1.PoolType_POOL_TYPE_IPPOOL,
+					CniIfname:      "net1",
+					CniContainerid: "1234",
+					Metadata: &nodev1.IPAMMetadata{
+						K8SPodName:      "test",
+						K8SPodNamespace: "test",
+					},
+					RequestedIps: []string{},
+					Features:     &nodev1.IPAMFeatures{},
+				}}).Return(&nodev1.AllocateResponse{
+				Allocations: []*nodev1.AllocationInfo{{
+					Pool:     "my-pool",
+					Ip:       "192.168.1.10/24",
+					Gateway:  "192.168.1.1",
+					PoolType: nodev1.PoolType_POOL_TYPE_IPPOOL,
+					Routes: []*nodev1.Route{
+						{
+							Dest: "5.5.0.0",
+						},
+					},
+				}},
+			}, nil)
+			err := p.CmdAdd(args)
+			Expect(err).To(HaveOccurred())
 		})
 	})
 

@@ -26,18 +26,25 @@ const (
 
 // Pool represents generic pool configuration
 type Pool struct {
-	Name       string           `json:"-"`
-	Subnet     string           `json:"subnet"`
-	StartIP    string           `json:"startIP"`
-	EndIP      string           `json:"endIP"`
-	Gateway    string           `json:"gateway"`
-	Exclusions []ExclusionRange `json:"exclusions"`
+	Name           string           `json:"-"`
+	Subnet         string           `json:"subnet"`
+	StartIP        string           `json:"startIP"`
+	EndIP          string           `json:"endIP"`
+	Gateway        string           `json:"gateway"`
+	Exclusions     []ExclusionRange `json:"exclusions"`
+	Routes         []Route          `json:"routes"`
+	DefaultGateway bool             `json:"defaultGateway"`
 }
 
 // ExclusionRange contains range of IP to exclude from the allocation
 type ExclusionRange struct {
 	StartIP string `json:"startIP"`
 	EndIP   string `json:"endIP"`
+}
+
+// Route contains a destination CIDR to be added as static route via gateway
+type Route struct {
+	Dst string `json:"dst"`
 }
 
 // String return string representation of the IPPool config
