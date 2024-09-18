@@ -49,7 +49,7 @@ spec:
                   is define in perNodeNetworkPrefix) and distributed between matching
                   nodes
                 type: string
-              defautGateway:
+              defaultGateway:
                 description: if true, add gateway as default gateway in the routes
                   list
                 type: boolean
