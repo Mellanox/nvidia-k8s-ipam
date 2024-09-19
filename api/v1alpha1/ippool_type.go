@@ -46,7 +46,7 @@ type IPPoolSpec struct {
 	// selector for nodes, if empty match all nodes
 	NodeSelector *corev1.NodeSelector `json:"nodeSelector,omitempty"`
 	// if true, add gateway as default gateway in the routes list
-	DefaultGateway bool `json:"defautGateway,omitempty"`
+	DefaultGateway bool `json:"defaultGateway,omitempty"`
 	// static routes list using the gateway specified in the spec.
 	Routes []Route `json:"routes,omitempty"`
 }
