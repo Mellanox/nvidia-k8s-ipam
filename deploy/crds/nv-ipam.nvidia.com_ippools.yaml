@@ -44,7 +44,7 @@ spec:
           spec:
             description: IPPoolSpec contains configuration for IP pool
             properties:
-              defautGateway:
+              defaultGateway:
                 description: if true, add gateway as default gateway in the routes
                   list
                 type: boolean
