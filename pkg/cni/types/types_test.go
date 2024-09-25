@@ -109,6 +109,31 @@ var _ = Describe("Types Tests", func() {
 			Expect(err).To(HaveOccurred())
 		})
 
+		It("Fails if CNI stdin data does not contain pool name and forcePoolName is set in config file", func() {
+			// write config file
+			confData := `{"forcePoolName": true}`
+			err := os.WriteFile(path.Join(testConfDir, cniTypes.ConfFileName), []byte(confData), 0o644)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Load CNI config
+			testConf := fmt.Sprintf(`{"name": "my-net", "ipam": {"confDir": %q}}`, testConfDir)
+			_, err = cniTypes.NewConfLoader().LoadConf(&skel.CmdArgs{
+				StdinData: []byte(testConf), Args: testArgs})
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("Fails if CNI stdin data does not contain pool name and forcePoolName is set", func() {
+			// write empty config file
+			err := os.WriteFile(path.Join(testConfDir, cniTypes.ConfFileName), []byte("{}"), 0o644)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Load CNI config
+			testConf := fmt.Sprintf(`{"name": "my-net", "ipam": {"confDir": %q, "forcePoolName": true}}`, testConfDir)
+			_, err = cniTypes.NewConfLoader().LoadConf(&skel.CmdArgs{
+				StdinData: []byte(testConf), Args: testArgs})
+			Expect(err).To(HaveOccurred())
+		})
+
 		It("Missing metadata arguments", func() {
 			// write config file
 			confData := `{"logLevel": "debug", "logFile": "some/path.log"}`
