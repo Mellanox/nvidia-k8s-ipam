@@ -559,7 +559,7 @@ Shim CNI Configuration flags:
                 shim CNI config: timeout for IPAM daemon calls (default 5)
       --cni-daemon-socket string                                                                                                                                                                     
                 shim CNI config: IPAM daemon socket path (default "unix:///var/lib/cni/nv-ipam/daemon.sock")
-      --cni-force-pool-name string
+      --cni-force-pool-name
                 shim CNI config: force specifying pool name in CNI configuration
       --cni-log-file string                                                                                                                                                                          
                 shim CNI config: path to log file for shim CNI (default "/var/log/nv-ipam-cni.log")
