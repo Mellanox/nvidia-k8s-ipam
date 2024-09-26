@@ -53,6 +53,7 @@ func New() *Options {
 		CNIConfDir:                  cniTypes.DefaultConfDir,
 		CNILogLevel:                 cniTypes.DefaultLogLevel,
 		CNILogFile:                  cniTypes.DefaultLogFile,
+		CNIForcePoolName:            false,
 	}
 }
 
@@ -75,6 +76,7 @@ type Options struct {
 	CNIDaemonCallTimeoutSeconds int
 	CNILogFile                  string
 	CNILogLevel                 string
+	CNIForcePoolName            bool
 }
 
 // AddNamedFlagSets register flags for common options in NamedFlagSets
@@ -119,6 +121,8 @@ func (o *Options) AddNamedFlagSets(sharedFS *cliflag.NamedFlagSets) {
 		"shim CNI config: path to log file for shim CNI")
 	cniFS.StringVar(&o.CNILogLevel, "cni-log-level", o.CNILogLevel,
 		"shim CNI config: log level for shim CNI")
+	cniFS.BoolVar(&o.CNIForcePoolName, "cni-force-pool-name", o.CNIForcePoolName,
+		"shim CNI config: force specifying pool name in CNI configuration")
 }
 
 // Validate registered options

@@ -359,9 +359,9 @@ func createNVIPAMConfig(log logr.Logger, opts *options.Options) error {
   "daemonSocket":    "%s",
   "daemonCallTimeoutSeconds":    %d,
   "logFile":   "%s",
-  "logLevel": "%s"
-}
-`, opts.CNIDaemonSocket, opts.CNIDaemonCallTimeoutSeconds, opts.CNILogFile, opts.CNILogLevel)
+  "logLevel": "%s",
+  "forcePoolName": %v
+}`, opts.CNIDaemonSocket, opts.CNIDaemonCallTimeoutSeconds, opts.CNILogFile, opts.CNILogLevel, opts.CNIForcePoolName)
 
 	err := renameio.WriteFile(filepath.Join(opts.CNIConfDir, cniTypes.ConfFileName), []byte(cfg), 0664)
 	if err != nil {

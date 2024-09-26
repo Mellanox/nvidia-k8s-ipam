@@ -1,5 +1,5 @@
 # Build the image
-FROM golang:1.21 as builder
+FROM golang:1.21 AS builder
 
 WORKDIR /workspace
 # Copy the Go Modules manifests

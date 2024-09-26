@@ -559,6 +559,8 @@ Shim CNI Configuration flags:
                 shim CNI config: timeout for IPAM daemon calls (default 5)
       --cni-daemon-socket string                                                                                                                                                                     
                 shim CNI config: IPAM daemon socket path (default "unix:///var/lib/cni/nv-ipam/daemon.sock")
+      --cni-force-pool-name string
+                shim CNI config: force specifying pool name in CNI configuration
       --cni-log-file string                                                                                                                                                                          
                 shim CNI config: path to log file for shim CNI (default "/var/log/nv-ipam-cni.log")
       --cni-log-level string                                                                                                                                                                         
@@ -579,6 +581,7 @@ nv-ipam accepts the following CNI configuration:
 ```json
 {
     "type": "nv-ipam",
+    "forcePoolName" : false,
     "poolName": "pool1,pool2",
     "poolType": "ippool",
     "daemonSocket": "unix:///var/lib/cni/nv-ipam/daemon.sock",
@@ -590,6 +593,7 @@ nv-ipam accepts the following CNI configuration:
 ```
 
 * `type` (string, required): CNI plugin name, MUST be `"nv-ipam"`
+* `forcePoolName` (bool, optional): force specifying pool name in CNI configuration.
 * `poolName` (string, optional): name of the Pool to be used for IP allocation.
 It is possible to allocate two IPs for the interface from different pools by specifying pool names separated by coma,
 e.g. `"my-ipv4-pool,my-ipv6-pool"`. The primary intent to support multiple pools is a dual-stack use-case when an 

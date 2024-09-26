@@ -23,6 +23,7 @@ import (
 
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
+	"k8s.io/utils/ptr"
 
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
 )
@@ -54,6 +55,9 @@ type ConfLoader interface {
 type IPAMConf struct {
 	types.IPAM
 
+	// ForcePoolName if set, specifying PoolName in CNI call is mandatory and will
+	// not be derrived from the network name.
+	ForcePoolName *bool `json:"forcePoolName,omitempty"`
 	// PoolName is the name of the pool to be used to allocate IP
 	PoolName string `json:"poolName,omitempty"`
 	// PoolType is the type of the pool which is referred by the PoolName,
@@ -150,7 +154,7 @@ func (cl *confLoader) LoadConf(args *skel.CmdArgs) (*NetConf, error) {
 	// overlay config with defaults
 	defaultConf := &IPAMConf{
 		// use network name as pool name by default
-		PoolName:                 n.Name,
+		ForcePoolName:            ptr.To(false),
 		PoolType:                 common.PoolTypeIPPool,
 		ConfDir:                  DefaultConfDir,
 		LogFile:                  DefaultLogFile,
@@ -159,6 +163,11 @@ func (cl *confLoader) LoadConf(args *skel.CmdArgs) (*NetConf, error) {
 		LogLevel:                 DefaultLogLevel,
 	}
 	cl.overlayConf(defaultConf, n.IPAM)
+
+	if !*n.IPAM.ForcePoolName && n.IPAM.PoolName == "" {
+		// set poolName as network name
+		n.IPAM.PoolName = n.Name
+	}
 
 	// static IP address priority:
 	// stdin runtimeConfig["ips"] > stdin args["cni"]["ips"] > IP argument from CNI_ARGS env variable
@@ -194,6 +203,7 @@ func (cl *confLoader) LoadConf(args *skel.CmdArgs) (*NetConf, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	n.IPAM.PoolType, err = getPoolType(n)
 	if err != nil {
 		return nil, err
@@ -243,6 +253,9 @@ func getPools(n *NetConf) ([]string, error) {
 	if n.Args != nil && len(n.Args.ArgsCNI.PoolNames) > 0 {
 		pools = n.Args.ArgsCNI.PoolNames
 	} else {
+		if n.IPAM.PoolName == "" {
+			return nil, fmt.Errorf("no pool provided")
+		}
 		pools = strings.Split(n.IPAM.PoolName, ",")
 	}
 	if len(pools) > 2 {
@@ -318,5 +331,9 @@ func (cl *confLoader) overlayConf(from, to *IPAMConf) {
 
 	if to.DaemonCallTimeoutSeconds == 0 {
 		to.DaemonCallTimeoutSeconds = from.DaemonCallTimeoutSeconds
+	}
+
+	if to.ForcePoolName == nil {
+		to.ForcePoolName = from.ForcePoolName
 	}
 }

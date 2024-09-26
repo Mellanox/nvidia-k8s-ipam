@@ -14,8 +14,11 @@
 package app_test
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -34,6 +37,7 @@ import (
 	ipamv1alpha1 "github.com/Mellanox/nvidia-k8s-ipam/api/v1alpha1"
 	"github.com/Mellanox/nvidia-k8s-ipam/cmd/ipam-node/app"
 	"github.com/Mellanox/nvidia-k8s-ipam/cmd/ipam-node/app/options"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/cni/types"
 )
 
 const (
@@ -158,6 +162,7 @@ func getOptions(testDir string) *options.Options {
 	opts.CNIConfDir = cniConfDir
 	opts.CNIDaemonSocket = daemonSocket
 	opts.PoolsNamespace = testNamespace
+	opts.CNIForcePoolName = true
 	return opts
 }
 
@@ -175,68 +180,117 @@ func getValidReqParams(uid, name, namespace string) *nodev1.IPAMParameters {
 	}
 }
 
+func pathExists(path string) error {
+	_, err := os.Stat(path)
+	return err
+}
+
 var _ = Describe("IPAM Node daemon", func() {
-	It("Validate main flows", func() {
-		done := make(chan interface{})
+	var (
+		wg          sync.WaitGroup
+		testDir     string
+		opts        *options.Options
+		cFuncDaemon context.CancelFunc
+		daemonCtx   context.Context
+	)
+
+	BeforeEach(func() {
+		wg = sync.WaitGroup{}
+		testDir = GinkgoT().TempDir()
+		opts = getOptions(testDir)
+
+		daemonCtx, cFuncDaemon = context.WithCancel(ctx)
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			defer GinkgoRecover()
-			defer close(done)
-			testDir := GinkgoT().TempDir()
-			opts := getOptions(testDir)
+			Expect(app.RunNodeDaemon(logr.NewContext(daemonCtx, klog.NewKlogr()), cfg, opts)).NotTo(HaveOccurred())
+		}()
+	})
 
-			createTestIPPools()
-			createTestCIDRPools()
-			pod := createTestPod()
+	AfterEach(func() {
+		cFuncDaemon()
+		wg.Wait()
+	})
 
-			ctx = logr.NewContext(ctx, klog.NewKlogr())
+	It("Validate main flows", func() {
+		createTestIPPools()
+		createTestCIDRPools()
+		pod := createTestPod()
 
-			go func() {
-				Expect(app.RunNodeDaemon(ctx, cfg, opts)).NotTo(HaveOccurred())
-			}()
+		conn, err := grpc.DialContext(ctx, opts.CNIDaemonSocket,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithBlock())
+		Expect(err).NotTo(HaveOccurred())
 
-			conn, err := grpc.DialContext(ctx, opts.CNIDaemonSocket,
-				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithBlock())
+		grpcClient := nodev1.NewIPAMServiceClient(conn)
+
+		cidrPoolParams := getValidReqParams(string(pod.UID), pod.Name, pod.Namespace)
+		cidrPoolParams.PoolType = nodev1.PoolType_POOL_TYPE_CIDRPOOL
+		ipPoolParams := getValidReqParams(string(pod.UID), pod.Name, pod.Namespace)
+
+		for _, params := range []*nodev1.IPAMParameters{ipPoolParams, cidrPoolParams} {
+			// no allocation yet
+			_, err = grpcClient.IsAllocated(ctx,
+				&nodev1.IsAllocatedRequest{Parameters: params})
+			Expect(status.Code(err) == codes.NotFound).To(BeTrue())
+
+			// allocate
+			resp, err := grpcClient.Allocate(ctx, &nodev1.AllocateRequest{Parameters: params})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.Allocations).To(HaveLen(2))
+			Expect(resp.Allocations[0].Pool).NotTo(BeEmpty())
+			Expect(resp.Allocations[0].Gateway).NotTo(BeEmpty())
+			Expect(resp.Allocations[0].Ip).NotTo(BeEmpty())
+
+			_, err = grpcClient.IsAllocated(ctx,
+				&nodev1.IsAllocatedRequest{Parameters: params})
 			Expect(err).NotTo(HaveOccurred())
 
-			grpcClient := nodev1.NewIPAMServiceClient(conn)
+			// deallocate
+			_, err = grpcClient.Deallocate(ctx, &nodev1.DeallocateRequest{Parameters: params})
+			Expect(err).NotTo(HaveOccurred())
 
-			cidrPoolParams := getValidReqParams(string(pod.UID), pod.Name, pod.Namespace)
-			cidrPoolParams.PoolType = nodev1.PoolType_POOL_TYPE_CIDRPOOL
-			ipPoolParams := getValidReqParams(string(pod.UID), pod.Name, pod.Namespace)
+			// deallocate should be idempotent
+			_, err = grpcClient.Deallocate(ctx, &nodev1.DeallocateRequest{Parameters: params})
+			Expect(err).NotTo(HaveOccurred())
 
-			for _, params := range []*nodev1.IPAMParameters{ipPoolParams, cidrPoolParams} {
-				// no allocation yet
-				_, err = grpcClient.IsAllocated(ctx,
-					&nodev1.IsAllocatedRequest{Parameters: params})
-				Expect(status.Code(err) == codes.NotFound).To(BeTrue())
+			// check should fail
+			_, err = grpcClient.IsAllocated(ctx,
+				&nodev1.IsAllocatedRequest{Parameters: params})
+			Expect(status.Code(err) == codes.NotFound).To(BeTrue())
+		}
+	})
 
-				// allocate
-				resp, err := grpcClient.Allocate(ctx, &nodev1.AllocateRequest{Parameters: params})
-				Expect(err).NotTo(HaveOccurred())
-				Expect(resp.Allocations).To(HaveLen(2))
-				Expect(resp.Allocations[0].Pool).NotTo(BeEmpty())
-				Expect(resp.Allocations[0].Gateway).NotTo(BeEmpty())
-				Expect(resp.Allocations[0].Ip).NotTo(BeEmpty())
-
-				_, err = grpcClient.IsAllocated(ctx,
-					&nodev1.IsAllocatedRequest{Parameters: params})
-				Expect(err).NotTo(HaveOccurred())
-
-				// deallocate
-				_, err = grpcClient.Deallocate(ctx, &nodev1.DeallocateRequest{Parameters: params})
-				Expect(err).NotTo(HaveOccurred())
-
-				// deallocate should be idempotent
-				_, err = grpcClient.Deallocate(ctx, &nodev1.DeallocateRequest{Parameters: params})
-				Expect(err).NotTo(HaveOccurred())
-
-				// check should fail
-				_, err = grpcClient.IsAllocated(ctx,
-					&nodev1.IsAllocatedRequest{Parameters: params})
-				Expect(status.Code(err) == codes.NotFound).To(BeTrue())
-			}
-		}()
-		Eventually(done, 5*time.Minute).Should(BeClosed())
+	It("deployShimCNI works as expected", func() {
+		// cni binary copied
+		Eventually(func() error {
+			return pathExists(filepath.Join(testDir, "cnibin", "nv-ipam"))
+		}).
+			WithTimeout(2 * time.Second).
+			ShouldNot(HaveOccurred())
+		// conf file copied
+		Eventually(func() error {
+			return pathExists(filepath.Join(testDir, "cniconf", "nv-ipam.conf"))
+		}).
+			WithTimeout(2 * time.Second).
+			ShouldNot(HaveOccurred())
+		// store dir created
+		Eventually(func() error {
+			return pathExists(filepath.Join(testDir, "store"))
+		}).
+			WithTimeout(2 * time.Second).
+			ShouldNot(HaveOccurred())
+		// conf file contains expected results
+		data, err := os.ReadFile(filepath.Join(testDir, "cniconf", "nv-ipam.conf"))
+		Expect(err).ToNot(HaveOccurred())
+		ipamConf := types.IPAMConf{}
+		Expect(json.Unmarshal(data, &ipamConf)).ToNot(HaveOccurred())
+		Expect(ipamConf.DaemonSocket).To(Equal(opts.CNIDaemonSocket))
+		Expect(ipamConf.DaemonCallTimeoutSeconds).To(Equal(opts.CNIDaemonCallTimeoutSeconds))
+		Expect(ipamConf.LogFile).To(Equal(opts.CNILogFile))
+		Expect(ipamConf.LogLevel).To(Equal(opts.CNILogLevel))
+		Expect(ipamConf.ForcePoolName).ToNot(BeNil())
+		Expect(*ipamConf.ForcePoolName).To(Equal(opts.CNIForcePoolName))
 	})
 })
