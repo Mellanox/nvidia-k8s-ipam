@@ -58,7 +58,7 @@ var _ = Describe("Config", func() {
 	})
 	It("Invalid pool: perNodeBlockSize too small", func() {
 		poolConfig := getValidPool()
-		poolConfig.PerNodeBlockSize = 1
+		poolConfig.PerNodeBlockSize = 0
 		cfg := &config.Config{Pools: map[string]config.PoolConfig{"pool1": poolConfig}}
 		Expect(cfg.Validate()).To(HaveOccurred())
 	})

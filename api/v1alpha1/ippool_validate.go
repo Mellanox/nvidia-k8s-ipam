@@ -35,13 +35,13 @@ func (r *IPPool) Validate() field.ErrorList {
 			field.NewPath("spec", "subnet"), r.Spec.Subnet, "is invalid subnet"))
 	}
 
-	if r.Spec.PerNodeBlockSize < 2 {
+	if r.Spec.PerNodeBlockSize < 1 {
 		errList = append(errList, field.Invalid(
 			field.NewPath("spec", "perNodeBlockSize"),
-			r.Spec.PerNodeBlockSize, "must be at least 2"))
+			r.Spec.PerNodeBlockSize, "must be at least 1"))
 	}
 
-	if network != nil && r.Spec.PerNodeBlockSize >= 2 {
+	if network != nil && r.Spec.PerNodeBlockSize >= 1 {
 		if GetPossibleIPCount(network).Cmp(big.NewInt(int64(r.Spec.PerNodeBlockSize))) < 0 {
 			// config is not valid even if only one node exist in the cluster
 			errList = append(errList, field.Invalid(
