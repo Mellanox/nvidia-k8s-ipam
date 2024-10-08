@@ -72,7 +72,7 @@ func (r *CIDRPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			}
 			_, nodeSubnet, _ := net.ParseCIDR(alloc.Prefix)
 			startIP := ip.NextIP(nodeSubnet.IP)
-			if ip.IsPointToPointSubnet(nodeSubnet) {
+			if ip.IsPointToPointSubnet(nodeSubnet) || ip.IsSingleIPSubnet(nodeSubnet) {
 				startIP = nodeSubnet.IP
 			}
 			endIP := ip.LastIP(nodeSubnet)
@@ -80,7 +80,7 @@ func (r *CIDRPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			for _, r := range cidrPool.Spec.Routes {
 				routes = append(routes, pool.Route{Dst: r.Dst})
 			}
-			pool := &pool.Pool{
+			p := &pool.Pool{
 				Name:       cidrPool.Name,
 				Subnet:     alloc.Prefix,
 				Gateway:    alloc.Gateway,
@@ -89,9 +89,9 @@ func (r *CIDRPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				Exclusions: buildExclusions(cidrPool.Spec.Exclusions, nodeSubnet, startIP, endIP),
 				Routes:     routes,
 			}
-			pool.DefaultGateway = cidrPool.Spec.DefaultGateway
+			p.DefaultGateway = cidrPool.Spec.DefaultGateway
 			reqLog.Info("CIDRPool config updated", "name", cidrPool.Name)
-			r.PoolManager.UpdatePool(poolKey, pool)
+			r.PoolManager.UpdatePool(poolKey, p)
 			found = true
 			break
 		}

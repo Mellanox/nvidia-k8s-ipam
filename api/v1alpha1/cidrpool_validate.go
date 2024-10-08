@@ -60,12 +60,6 @@ func (r *CIDRPool) validateCIDR() field.ErrorList {
 		return field.ErrorList{field.Invalid(field.NewPath("spec", "cidr"), r.Spec.CIDR, "network prefix has host bits set")}
 	}
 
-	setBits, bitsTotal := network.Mask.Size()
-	if setBits == bitsTotal {
-		return field.ErrorList{field.Invalid(
-			field.NewPath("spec", "cidr"), r.Spec.CIDR, "single IP prefixes are not supported")}
-	}
-
 	if r.Spec.GatewayIndex != nil && *r.Spec.GatewayIndex < 0 {
 		return field.ErrorList{field.Invalid(
 			field.NewPath("spec", "gatewayIndex"), r.Spec.GatewayIndex, "must not be negative")}
@@ -75,9 +69,9 @@ func (r *CIDRPool) validateCIDR() field.ErrorList {
 		return field.ErrorList{field.Invalid(
 			field.NewPath("spec", "perNodeNetworkPrefix"), r.Spec.PerNodeNetworkPrefix, "must not be negative")}
 	}
-
+	setBits, bitsTotal := network.Mask.Size()
 	if r.Spec.PerNodeNetworkPrefix == 0 ||
-		r.Spec.PerNodeNetworkPrefix >= int32(bitsTotal) ||
+		r.Spec.PerNodeNetworkPrefix > int32(bitsTotal) ||
 		r.Spec.PerNodeNetworkPrefix < int32(setBits) {
 		return field.ErrorList{field.Invalid(
 			field.NewPath("spec", "perNodeNetworkPrefix"),

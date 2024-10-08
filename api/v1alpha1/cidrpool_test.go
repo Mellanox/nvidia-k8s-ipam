@@ -185,8 +185,8 @@ var _ = Describe("CIDRPool", func() {
 		},
 		Entry("empty", "", int32(30), false),
 		Entry("invalid value", "aaaa", int32(30), false),
-		Entry("/32", "192.168.1.1/32", int32(32), false),
-		Entry("/128", "2001:db8:3333:4444::0/128", int32(128), false),
+		Entry("/32", "192.168.1.1/32", int32(32), true),
+		Entry("/128", "2001:db8:3333:4444::0/128", int32(128), true),
 		Entry("valid ipv4", "192.168.1.0/24", int32(30), true),
 		Entry("valid ipv6", "2001:db8:3333:4444::0/64", int32(120), true),
 	)
@@ -203,8 +203,8 @@ var _ = Describe("CIDRPool", func() {
 		Entry("not set", "192.168.0.0/16", int32(0), false),
 		Entry("negative", "192.168.0.0/16", int32(-10), false),
 		Entry("larger than CIDR", "192.168.0.0/16", int32(8), false),
-		Entry("smaller than 31 for IPv4 pool", "192.168.0.0/16", int32(32), false),
-		Entry("smaller than 127 for IPv6 pool", "2001:db8:3333:4444::0/64", int32(128), false),
+		Entry("32 for IPv4 pool", "192.168.0.0/16", int32(32), true),
+		Entry("128 for IPv6 pool", "2001:db8:3333:4444::0/64", int32(128), true),
 		Entry("match CIDR prefix size - ipv4", "192.168.0.0/16", int32(16), true),
 		Entry("match CIDR prefix size - ipv6", "2001:db8:3333:4444::0/64", int32(64), true),
 	)
