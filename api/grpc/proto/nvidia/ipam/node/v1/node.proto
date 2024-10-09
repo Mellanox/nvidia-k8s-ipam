@@ -95,6 +95,8 @@ message IPAMMetadata {
 message IPAMFeatures {
   // optional, request IP of the default gateway from the pool be allocated for container
   bool allocate_default_gateway = 1;
+  // optional, request IP with the given index in the chunk allocated for the particular node to be allocated for the container
+  optional int32 allocate_ip_with_index = 2;
 }
 
 // IsAllocatedRequest contains parameters for IsAllocated rpc call

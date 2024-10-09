@@ -86,6 +86,10 @@ type IPAMConf struct {
 		// request to allocate pool's default gateway as
 		// interface IP address for the container
 		AllocateDefaultGateway bool
+		// request IP with the given index in the chunk allocated
+		// for the particular node as interface IP address for
+		// the container
+		AllocateIPWithIndex *int32
 	} `json:"-"`
 }
 
@@ -109,6 +113,7 @@ type IPAMArgs struct {
 	PoolNames              []string `json:"poolNames"`
 	PoolType               string   `json:"poolType"`
 	AllocateDefaultGateway bool     `json:"allocateDefaultGateway"`
+	AllocateIPWithIndex    *int32   `json:"allocateIPWithIndex"`
 }
 
 // IPAMEnvArgs holds arguments from CNI_ARGS env variable
@@ -191,11 +196,24 @@ func (cl *confLoader) LoadConf(args *skel.CmdArgs) (*NetConf, error) {
 
 	if n.Args != nil && n.Args.ArgsCNI != nil {
 		n.IPAM.Features.AllocateDefaultGateway = n.Args.ArgsCNI.AllocateDefaultGateway
+		if n.Args.ArgsCNI.AllocateIPWithIndex != nil && *n.Args.ArgsCNI.AllocateIPWithIndex < 0 {
+			return nil, fmt.Errorf("allocateIPWithIndex can't be negative")
+		}
+		n.IPAM.Features.AllocateIPWithIndex = n.Args.ArgsCNI.AllocateIPWithIndex
 	}
 
 	if n.IPAM.Features.AllocateDefaultGateway {
 		if len(n.IPAM.RequestedIPs) > 0 {
-			return nil, fmt.Errorf("allocatedDefaultGateway can't be used together with static IP request")
+			return nil, fmt.Errorf("allocateDefaultGateway can't be used together with static IP request")
+		}
+		if n.IPAM.Features.AllocateIPWithIndex != nil {
+			return nil, fmt.Errorf("allocateDefaultGateway can't be used together allocateIPWithIndex")
+		}
+	}
+
+	if n.IPAM.Features.AllocateIPWithIndex != nil {
+		if len(n.IPAM.RequestedIPs) > 0 {
+			return nil, fmt.Errorf("allocateIPWithIndex can't be used together with static IP request")
 		}
 	}
 

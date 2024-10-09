@@ -20,6 +20,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/utils/ptr"
 
 	current "github.com/containernetworking/cni/pkg/types/100"
 	"github.com/stretchr/testify/mock"
@@ -27,6 +28,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	nodev1 "github.com/Mellanox/nvidia-k8s-ipam/api/grpc/nvidia/ipam/node/v1"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ip"
 	allocatorPkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/allocator"
 	allocatorMockPkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/allocator/mocks"
 	handlersPkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/handlers"
@@ -56,9 +58,9 @@ func getPoolConfigs() map[string]*pool.Pool {
 		},
 		testPoolName2: {Name: testPoolName2,
 			Subnet:         "10.100.0.0/16",
-			StartIP:        "10.100.0.2",
+			StartIP:        "10.100.0.1",
 			EndIP:          "10.100.0.254",
-			Gateway:        "10.100.0.1",
+			Gateway:        "10.100.0.5",
 			DefaultGateway: true,
 			Routes: []pool.Route{
 				{
@@ -176,6 +178,29 @@ var _ = Describe("Handlers", func() {
 				HaveField("Gateway", "192.168.0.1"),
 			)))
 	})
+	It("Allocate IP with index", func() {
+		store.On("Open", mock.Anything).Return(session, nil)
+		poolManager.On("GetPoolByKey", testPoolName1).Return(getPoolConfigs()[testPoolName1])
+		allocators[testPoolName1].On(
+			"Allocate", "id1", "net0", mock.Anything, ip.NormalizeIP(net.ParseIP("192.168.0.7"))).Return(
+			&current.IPConfig{
+				Gateway: net.ParseIP("192.168.0.1"),
+				Address: getIPWithMask("192.168.0.7/16"),
+			}, nil)
+		session.On("Commit").Return(nil)
+		ipamParams := getValidIPAMParams()
+		ipamParams.Pools = []string{testPoolName1}
+		ipamParams.Features = &nodev1.IPAMFeatures{AllocateIpWithIndex: ptr.To[int32](5)}
+		resp, err := handlers.Allocate(ctx, &nodev1.AllocateRequest{Parameters: ipamParams})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resp.Allocations).To(HaveLen(1))
+		Expect(resp.Allocations).To(ContainElement(
+			And(
+				HaveField("Pool", testPoolName1),
+				HaveField("Ip", "192.168.0.7/16"),
+				HaveField("Gateway", "192.168.0.1"),
+			)))
+	})
 	It("Allocate duplicate static routes", func() {
 		store.On("Open", mock.Anything).Return(session, nil)
 		allocators[testPoolName1].On("Allocate", "id1", "net0", mock.Anything, net.ParseIP("192.168.0.2")).Return(
@@ -228,6 +253,26 @@ var _ = Describe("Handlers", func() {
 		ipamParams.RequestedIps = []string{"10.10.10.10"}
 		_, err := handlers.Allocate(ctx, &nodev1.AllocateRequest{Parameters: ipamParams})
 		Expect(err).To(MatchError(ContainSubstring("not all requested static IPs can be allocated")))
+	})
+	It("Allocate failed: IP with index out of range", func() {
+		store.On("Open", mock.Anything).Return(session, nil)
+		poolManager.On("GetPoolByKey", testPoolName1).Return(getPoolConfigs()[testPoolName1])
+		session.On("Cancel").Return()
+		ipamParams := getValidIPAMParams()
+		ipamParams.Pools = []string{testPoolName1}
+		ipamParams.Features = &nodev1.IPAMFeatures{AllocateIpWithIndex: ptr.To[int32](253)}
+		_, err := handlers.Allocate(ctx, &nodev1.AllocateRequest{Parameters: ipamParams})
+		Expect(err).To(MatchError(ContainSubstring("requested IP index \"253\" is outside of the given chunk")))
+	})
+	It("Allocate failed: IP with index is the gateway", func() {
+		store.On("Open", mock.Anything).Return(session, nil)
+		poolManager.On("GetPoolByKey", testPoolName2).Return(getPoolConfigs()[testPoolName2])
+		session.On("Cancel").Return()
+		ipamParams := getValidIPAMParams()
+		ipamParams.Pools = []string{testPoolName2}
+		ipamParams.Features = &nodev1.IPAMFeatures{AllocateIpWithIndex: ptr.To[int32](4)}
+		_, err := handlers.Allocate(ctx, &nodev1.AllocateRequest{Parameters: ipamParams})
+		Expect(err).To(MatchError(ContainSubstring("requested IP index \"4\" is the actual gateway, use allocate_default_gateway feature instead")))
 	})
 	It("Allocation failed: unknown pool", func() {
 		store.On("Open", mock.Anything).Return(session, nil)

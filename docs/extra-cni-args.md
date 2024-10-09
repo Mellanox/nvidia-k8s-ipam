@@ -4,12 +4,13 @@
 
 The NV-IPAM plugin supports the following [args in network config](https://www.cni.dev/docs/conventions/#args-in-network-config): 
 
-| Argument               | Type                     | Description                                                                                                                                                                                              |
-|------------------------|--------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| ips                    | `[]string`               | Request static IPs from the pool                                                                                                                                                                         |
-| poolNames              | `[]string,` max len is 2 | Name of the pools to be used for IP allocation.  _The field has higher priority than `ipam.poolName`                                                                                                    |
-| poolType               | `string`                 | Type (`ippool`, `cidrpool`) of the pool which is referred by the `poolNames`. _The field has higher priority than_ `ipam.poolType`                                                                       |
-| allocateDefaultGateway | `bool`                   | Request to allocate pool's default gateway as interface IP address for the container. Pool must have the gateway when this argument is used. The argument can't be used together with static IP request. |
+| Argument               | Type                     | Description                                                                                                                                                                                                                                      |
+|------------------------|--------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ips                    | `[]string`               | Request static IPs from the pool                                                                                                                                                                                                                 |
+| poolNames              | `[]string,` max len is 2 | Name of the pools to be used for IP allocation.  _The field has higher priority than `ipam.poolName`                                                                                                                                             |
+| poolType               | `string`                 | Type (`ippool`, `cidrpool`) of the pool which is referred by the `poolNames`. _The field has higher priority than_ `ipam.poolType`                                                                                                               |
+| allocateDefaultGateway | `bool`                   | Request to allocate pool's default gateway as interface IP address for the container. Pool must have the gateway when this argument is used. The argument can't be used together with static IP request or with allocating IP of specific index. |
+| allocateIPWithIndex    | `int`                    | Request to allocate pool's IP with the given index as interface IP address for the container. The argument can't be used together with static IP request or with allocating the gateway IP.                                                      |
 
 
 
