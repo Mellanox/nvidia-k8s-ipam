@@ -170,18 +170,50 @@ var _ = Describe("Types Tests", func() {
 			Entry("env variable", `{"name": "my-net", "ipam": {"confDir": %q}}`,
 				"IP=192.168.1.1",
 				[]net.IP{net.ParseIP("192.168.1.1")}, true),
-			Entry("STDIN CNI args", `{"name": "my-net", 
+			Entry("STDIN CNI args", `{"name": "my-net",
 				"args": {"cni": {"ips": ["1.1.1.1", "2.2.2.2/24"]}}, "ipam": {"confDir": %q}}`, "",
 				[]net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("2.2.2.2")}, true),
-			Entry("STDIN RuntimeConfig", `{"name": "my-net", 
+			Entry("STDIN RuntimeConfig", `{"name": "my-net",
 				"runtimeConfig": {"ips": ["1.1.1.1", "2.2.2.2/24"]}, "ipam": {"confDir": %q}}`, "",
 				[]net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("2.2.2.2")}, true),
-			Entry("ipv6", `{"name": "my-net", 
+			Entry("ipv6", `{"name": "my-net",
 				"runtimeConfig": {"ips": ["fd52:2eb5:44::1"]}, "ipam": {"confDir": %q}}`, "",
 				[]net.IP{net.ParseIP("fd52:2eb5:44::1")}, true),
-			Entry("invalid ip", `{"name": "my-net", 
+			Entry("invalid ip", `{"name": "my-net",
 				"runtimeConfig": {"ips": ["adfdsaf"]}, "ipam": {"confDir": %q}}`, "",
 				nil, false),
+			Entry("allocate default gateway and IP via env variable",
+				`{"name": "my-net", "args": {"cni": {"allocateDefaultGateway": true}},"ipam": {"confDir": %q}}`,
+				"IP=192.168.1.1",
+				[]net.IP{net.ParseIP("192.168.1.1")}, false),
+			Entry("allocate default gateway and IP via STDIN CNI args", `{"name": "my-net",
+				"args": {"cni": {"ips": ["1.1.1.1", "2.2.2.2/24"], "allocateDefaultGateway": true}},
+				"ipam": {"confDir": %q}}`, "",
+				[]net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("2.2.2.2")}, false),
+			Entry("allocate default gateway and IP via STDIN RuntimeConfig", `{"name": "my-net",
+				"runtimeConfig": {"ips": ["1.1.1.1", "2.2.2.2/24"]}, "args": {"cni": {"allocateDefaultGateway": true}},
+				"ipam": {"confDir": %q}}`, "",
+				[]net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("2.2.2.2")}, false),
+			Entry("allocate default gateway and ipv6", `{"name": "my-net",
+				"runtimeConfig": {"ips": ["fd52:2eb5:44::1"]}, "args": {"cni": {"allocateDefaultGateway": true}},
+				"ipam": {"confDir": %q}}`, "",
+				[]net.IP{net.ParseIP("fd52:2eb5:44::1")}, false),
+			Entry("allocate IP with index and IP via env variable",
+				`{"name": "my-net", "args": {"cni": {"allocateIPWithIndex": 1}},"ipam": {"confDir": %q}}`,
+				"IP=192.168.1.1",
+				[]net.IP{net.ParseIP("192.168.1.1")}, false),
+			Entry("allocate IP with index and IP via STDIN CNI args", `{"name": "my-net",
+				"args": {"cni": {"ips": ["1.1.1.1", "2.2.2.2/24"], "allocateIPWithIndex": 1}},
+				"ipam": {"confDir": %q}}`, "",
+				[]net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("2.2.2.2")}, false),
+			Entry("allocate IP with index and IP via STDIN RuntimeConfig", `{"name": "my-net",
+				"runtimeConfig": {"ips": ["1.1.1.1", "2.2.2.2/24"]}, "args": {"cni": {"allocateIPWithIndex": 1}},
+				"ipam": {"confDir": %q}}`, "",
+				[]net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("2.2.2.2")}, false),
+			Entry("allocate IP with index and ipv6", `{"name": "my-net",
+				"runtimeConfig": {"ips": ["fd52:2eb5:44::1"]}, "args": {"cni": {"allocateIPWithIndex": 1}},
+				"ipam": {"confDir": %q}}`, "",
+				[]net.IP{net.ParseIP("fd52:2eb5:44::1")}, false),
 		)
 		DescribeTable("PoolName",
 			func(fileContent string, stdinContent string, expectedValue []string, isValid bool) {
@@ -210,7 +242,7 @@ var _ = Describe("Types Tests", func() {
 				[]string{"fromSTDIN"}, true),
 			Entry("from STDIN CNI args",
 				`{"poolName": "fromFile"}`,
-				`{"name": "my-net", "args":{"cni": {"poolNames": ["fromArgs", "fromArgs2"]}}, 
+				`{"name": "my-net", "args":{"cni": {"poolNames": ["fromArgs", "fromArgs2"]}},
 							"ipam": {"confDir": %q, "poolName": "fromSTDIN"}}`,
 				[]string{"fromArgs", "fromArgs2"}, true),
 			Entry("too many pools",
@@ -234,9 +266,33 @@ var _ = Describe("Types Tests", func() {
 			Entry("use IPPool by default", `{}`, `{"name": "my-net", "ipam": {"confDir": %q}}`, "ippool", true),
 			Entry("from conf file", `{"poolType": "CIDRPool"}`, `{"name": "my-net", "ipam": {"confDir": %q}}`, "cidrpool", true),
 			Entry("from STDIN", `{}`, `{"name": "my-net", "ipam": {"confDir": %q, "poolType": "cidrPool"}}`, "cidrpool", true),
-			Entry("from STDIN CNI Args", `{}`, `{"name": "my-net", 
+			Entry("from STDIN CNI Args", `{}`, `{"name": "my-net",
 				"args": {"cni": {"poolType":"cidrpool"}}, "ipam": {"confDir": %q}}`, "cidrpool", true),
 			Entry("unknown type", `{}`, `{"name": "my-net", "ipam": {"confDir": %q, "poolType": "foobar"}}`, "", false),
 		)
+		It("errors if allocateIPWithIndex is negative", func() {
+			// write empty config file
+			err := os.WriteFile(path.Join(testConfDir, cniTypes.ConfFileName), []byte("{}"), 0o644)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Load config
+			testConf := fmt.Sprintf(`{"name": "my-net", "ipam": {"confDir": %q}, "args": {"cni": {"allocateIPWithIndex": -1}}}`, testConfDir)
+			_, err = cniTypes.NewConfLoader().LoadConf(&skel.CmdArgs{StdinData: []byte(testConf), Args: testArgs})
+
+			// Validate
+			Expect(err).To(MatchError(ContainSubstring("allocateIPWithIndex can't be negative")))
+		})
+		It("errors if allocateDefaultGateway and allocateIPWithIndex are used together", func() {
+			// write empty config file
+			err := os.WriteFile(path.Join(testConfDir, cniTypes.ConfFileName), []byte("{}"), 0o644)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Load config
+			testConf := fmt.Sprintf(`{"name": "my-net", "ipam": {"confDir": %q}, "args": {"cni": {"allocateIPWithIndex": 1, "allocateDefaultGateway": true}}}`, testConfDir)
+			_, err = cniTypes.NewConfLoader().LoadConf(&skel.CmdArgs{StdinData: []byte(testConf), Args: testArgs})
+
+			// Validate
+			Expect(err).To(MatchError(ContainSubstring("allocateDefaultGateway can't be used together allocateIPWithIndex")))
+		})
 	})
 })

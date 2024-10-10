@@ -30,6 +30,7 @@ import (
 
 	nodev1 "github.com/Mellanox/nvidia-k8s-ipam/api/grpc/nvidia/ipam/node/v1"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ip"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/allocator"
 	storePkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/store"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/types"
@@ -132,25 +133,10 @@ func (h *Handlers) allocateInPool(poolName string, reqLog logr.Logger,
 		return PoolAlloc{}, status.Errorf(codes.NotFound,
 			"configuration for pool \"%s\", poolType \"%s\" not found", poolName, poolType)
 	}
-	rangeStart := net.ParseIP(poolCfg.StartIP)
-	if rangeStart == nil {
-		return PoolAlloc{}, poolCfgError(poolLog, poolName, poolType, "invalid rangeStart")
+	rangeSet, rangeStart, subnet, gateway, err := newRangeSetAndDependenciesForPoolCfg(poolCfg)
+	if err != nil {
+		return PoolAlloc{}, poolCfgError(poolLog, poolName, poolType, err.Error())
 	}
-	rangeEnd := net.ParseIP(poolCfg.EndIP)
-	if rangeEnd == nil {
-		return PoolAlloc{}, poolCfgError(poolLog, poolName, poolType, "invalid rangeEnd")
-	}
-	_, subnet, err := net.ParseCIDR(poolCfg.Subnet)
-	if err != nil || subnet == nil || subnet.IP == nil || subnet.Mask == nil {
-		return PoolAlloc{}, poolCfgError(poolLog, poolName, poolType, "invalid subnet")
-	}
-	gateway := net.ParseIP(poolCfg.Gateway)
-	rangeSet := &allocator.RangeSet{allocator.Range{
-		RangeStart: rangeStart,
-		RangeEnd:   rangeEnd,
-		Subnet:     cniTypes.IPNet(*subnet),
-		Gateway:    gateway,
-	}}
 	if err := rangeSet.Canonicalize(); err != nil {
 		return PoolAlloc{}, poolCfgError(poolLog, poolName, poolType,
 			fmt.Sprintf("invalid range config: %s", err.Error()))
@@ -163,13 +149,29 @@ func (h *Handlers) allocateInPool(poolName string, reqLog logr.Logger,
 		}
 	}
 
-	if params.Features != nil && params.Features.AllocateDefaultGateway {
-		if gateway == nil {
-			return PoolAlloc{}, status.Errorf(codes.InvalidArgument,
-				"pool without gateway can't be used with allocate_default_gateway feature,"+
-					"pool \"%s\", poolType \"%s\"", poolName, poolType)
+	if params.Features != nil {
+		if params.Features.AllocateDefaultGateway {
+			if gateway == nil {
+				return PoolAlloc{}, status.Errorf(codes.InvalidArgument,
+					"pool without gateway can't be used with allocate_default_gateway feature,"+
+						"pool \"%s\", poolType \"%s\"", poolName, poolType)
+			}
+			selectedStaticIP = gateway
 		}
-		selectedStaticIP = gateway
+
+		if params.Features.AllocateIpWithIndex != nil {
+			selectedIP := ip.NextIPWithOffset(rangeStart, int64(*params.Features.AllocateIpWithIndex))
+			if selectedIP.Equal(gateway) {
+				return PoolAlloc{}, status.Errorf(codes.InvalidArgument,
+					"requested IP index \"%d\" is the actual gateway, "+
+						"use allocate_default_gateway feature instead", *params.Features.AllocateIpWithIndex)
+			}
+			if !rangeSet.Contains(selectedIP) {
+				return PoolAlloc{}, status.Errorf(codes.InvalidArgument,
+					"requested IP index \"%d\" is outside of the given chunk", *params.Features.AllocateIpWithIndex)
+			}
+			selectedStaticIP = selectedIP
+		}
 	}
 
 	exclusionRangeSet := make(allocator.RangeSet, 0, len(poolCfg.Exclusions))
@@ -191,12 +193,7 @@ func (h *Handlers) allocateInPool(poolName string, reqLog logr.Logger,
 		CreateTime:         time.Now().Format(time.RFC3339Nano),
 		PoolConfigSnapshot: poolCfg.String(),
 	}
-	if params.Metadata != nil {
-		allocMeta.PodUUID = params.Metadata.K8SPodUid
-		allocMeta.PodName = params.Metadata.K8SPodName
-		allocMeta.PodNamespace = params.Metadata.K8SPodNamespace
-		allocMeta.DeviceID = params.Metadata.DeviceId
-	}
+	setAllocMetadata(&allocMeta, params.Metadata)
 	result, err := alloc.Allocate(params.CniContainerid, params.CniIfname, allocMeta, selectedStaticIP)
 	if err != nil {
 		poolLog.Error(err, "failed to allocate IP address")
@@ -217,6 +214,38 @@ func (h *Handlers) allocateInPool(poolName string, reqLog logr.Logger,
 		IPConfig: result,
 		Routes:   routes,
 	}, nil
+}
+
+func newRangeSetAndDependenciesForPoolCfg(poolCfg *pool.Pool) (*allocator.RangeSet, net.IP, *net.IPNet, net.IP, error) {
+	rangeStart := net.ParseIP(poolCfg.StartIP)
+	if rangeStart == nil {
+		return nil, nil, nil, nil, errors.New("invalid rangeStart")
+	}
+	rangeEnd := net.ParseIP(poolCfg.EndIP)
+	if rangeEnd == nil {
+		return nil, nil, nil, nil, errors.New("invalid rangeEnd")
+	}
+	_, subnet, err := net.ParseCIDR(poolCfg.Subnet)
+	if err != nil || subnet == nil || subnet.IP == nil || subnet.Mask == nil {
+		return nil, nil, nil, nil, errors.New("invalid subnet")
+	}
+	gateway := net.ParseIP(poolCfg.Gateway)
+	rangeSet := &allocator.RangeSet{allocator.Range{
+		RangeStart: rangeStart,
+		RangeEnd:   rangeEnd,
+		Subnet:     cniTypes.IPNet(*subnet),
+		Gateway:    gateway,
+	}}
+	return rangeSet, rangeStart, subnet, gateway, nil
+}
+
+func setAllocMetadata(allocMeta *types.ReservationMetadata, paramsMetadata *nodev1.IPAMMetadata) {
+	if paramsMetadata != nil {
+		allocMeta.PodUUID = paramsMetadata.K8SPodUid
+		allocMeta.PodName = paramsMetadata.K8SPodName
+		allocMeta.PodNamespace = paramsMetadata.K8SPodNamespace
+		allocMeta.DeviceID = paramsMetadata.DeviceId
+	}
 }
 
 func specificError(err error, poolName string, poolType string) error {

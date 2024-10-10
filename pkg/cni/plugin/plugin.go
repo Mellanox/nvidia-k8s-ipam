@@ -224,6 +224,7 @@ func cniConfToGRPCReq(conf *types.NetConf, args *skel.CmdArgs) *nodev1.IPAMParam
 		RequestedIps: requestedIPs,
 		Features: &nodev1.IPAMFeatures{
 			AllocateDefaultGateway: conf.IPAM.Features.AllocateDefaultGateway,
+			AllocateIpWithIndex:    conf.IPAM.Features.AllocateIPWithIndex,
 		},
 	}
 	if req.Metadata.K8SPodUid == "" {
