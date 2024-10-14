@@ -350,7 +350,7 @@ spec:
     - matchExpressions:
         - key: node-role.kubernetes.io/worker
           operator: Exists
-  defautGateway: true # optional
+  defaultGateway: true # optional
   routes: # optional
   - dst: 5.5.0.0/24
 ```
@@ -386,7 +386,7 @@ spec:
     * `endIP`: end IP of the exclude range (inclusive).
 
   * `nodeSelector` (optional): A list of node selector terms. The terms are ORed. Each term can have a list of matchExpressions that are ANDed. Only the nodes that match the provided labels will get assigned IP Blocks for the defined pool.
-  * `defautGateway` (optional): Add the pool gateway as default gateway in the pod static routes.
+  * `defaultGateway` (optional): Add the pool gateway as default gateway in the pod static routes.
   * `routes` (optional, list): contains CIDR to be added in the pod static routes via the pool gateway.
 
     * `dst`: The destination of the static route, in CIDR notation.
@@ -429,7 +429,7 @@ spec:
       - matchExpressions:
           - key: node-role.kubernetes.io/worker
             operator: Exists
-  defautGateway: true # optional
+  defaultGateway: true # optional
   routes: # optional
   - dst: 5.5.0.0/24
 ```
@@ -485,7 +485,7 @@ spec:
       * `prefix`: statically allocated prefix.
 
   * `nodeSelector`(optional): A list of node selector terms. The terms are ORed. Each term can have a list of matchExpressions that are ANDed. Only the nodes that match the provided labels will get assigned IP Blocks for the defined pool.
-  * `defautGateway` (optional): Add the pool gateway as default gateway in the pod static routes.
+  * `defaultGateway` (optional): Add the pool gateway as default gateway in the pod static routes.
   * `routes` (optional, list): contains CIDR to be added in the pod static routes via the pool gateway.
 
     * `dst`: The destination of the static route, in CIDR notation.
