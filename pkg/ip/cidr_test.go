@@ -311,6 +311,22 @@ var _ = Describe("CIDR functions", func() {
 				testNet,
 				true,
 			},
+			{
+				net.ParseIP("192.168.0.10"),
+				func() *net.IPNet {
+					_, testNet, _ := net.ParseCIDR("192.168.0.10/32")
+					return testNet
+				}(),
+				false,
+			},
+			{
+				net.ParseIP("192.168.0.1"),
+				func() *net.IPNet {
+					_, testNet, _ := net.ParseCIDR("192.168.0.0/31")
+					return testNet
+				}(),
+				false,
+			},
 		}
 
 		for _, test := range testCases {
@@ -373,6 +389,30 @@ var _ = Describe("CIDR functions", func() {
 			Expect(gen().String()).To(Equal("::2/127"))
 			Expect(gen().String()).To(Equal("::4/127"))
 		})
+		It("valid - single IP IPv4 subnet", func() {
+			_, net, _ := net.ParseCIDR("192.168.0.0/16")
+			gen := GetSubnetGen(net, 32)
+			Expect(gen).NotTo(BeNil())
+			Expect(gen().String()).To(Equal("192.168.0.0/32"))
+			Expect(gen().String()).To(Equal("192.168.0.1/32"))
+			Expect(gen().String()).To(Equal("192.168.0.2/32"))
+		})
+		It("valid - single IP IPv6 subnet", func() {
+			_, net, _ := net.ParseCIDR("2002:0:0:1234::/64")
+			gen := GetSubnetGen(net, 128)
+			Expect(gen).NotTo(BeNil())
+			Expect(gen().String()).To(Equal("2002:0:0:1234::/128"))
+			Expect(gen().String()).To(Equal("2002:0:0:1234::1/128"))
+			Expect(gen().String()).To(Equal("2002:0:0:1234::2/128"))
+		})
+		It("valid - single IP IPv4 subnet, point to point network", func() {
+			_, net, _ := net.ParseCIDR("192.168.0.0/31")
+			gen := GetSubnetGen(net, 32)
+			Expect(gen).NotTo(BeNil())
+			Expect(gen().String()).To(Equal("192.168.0.0/32"))
+			Expect(gen().String()).To(Equal("192.168.0.1/32"))
+			Expect(gen()).To(BeNil())
+		})
 	})
 	Context("IsPointToPointSubnet", func() {
 		It("/31", func() {
@@ -388,6 +428,24 @@ var _ = Describe("CIDR functions", func() {
 			Expect(IsPointToPointSubnet(network)).To(BeFalse())
 		})
 	})
+	Context("IsSingleIPSubnet", func() {
+		It("/32", func() {
+			_, network, _ := net.ParseCIDR("192.168.1.0/32")
+			Expect(IsSingleIPSubnet(network)).To(BeTrue())
+		})
+		It("/128", func() {
+			_, network, _ := net.ParseCIDR("2002:0:0:1234::1/128")
+			Expect(IsSingleIPSubnet(network)).To(BeTrue())
+		})
+		It("/24", func() {
+			_, network, _ := net.ParseCIDR("192.168.1.0/24")
+			Expect(IsSingleIPSubnet(network)).To(BeFalse())
+		})
+		It("/31", func() {
+			_, network, _ := net.ParseCIDR("192.168.1.0/31")
+			Expect(IsSingleIPSubnet(network)).To(BeFalse())
+		})
+	})
 	Context("LastIP", func() {
 		It("/31", func() {
 			_, network, _ := net.ParseCIDR("192.168.1.0/31")
@@ -396,6 +454,14 @@ var _ = Describe("CIDR functions", func() {
 		It("/127", func() {
 			_, network, _ := net.ParseCIDR("2002:0:0:1234::0/127")
 			Expect(LastIP(network).String()).To(Equal("2002:0:0:1234::1"))
+		})
+		It("/32", func() {
+			_, network, _ := net.ParseCIDR("192.168.1.10/32")
+			Expect(LastIP(network).String()).To(Equal("192.168.1.10"))
+		})
+		It("/128", func() {
+			_, network, _ := net.ParseCIDR("2002:0:0:1234::10/128")
+			Expect(LastIP(network).String()).To(Equal("2002:0:0:1234::10"))
 		})
 		It("/24", func() {
 			_, network, _ := net.ParseCIDR("192.168.1.0/24")

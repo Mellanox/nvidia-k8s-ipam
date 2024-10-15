@@ -394,7 +394,7 @@ spec:
 > __Notes:__
 >
 > * pool name is composed of alphanumeric letters separated by dots(`.`) underscores(`_`) or hyphens(`-`).
-> * `perNodeBlockSize` minimum size is 2.
+> * `perNodeBlockSize` minimum size is 1.
 > * `subnet` must be large enough to accommodate at least one `perNodeBlockSize` block of IPs.
 
 

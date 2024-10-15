@@ -416,6 +416,46 @@ var _ = Describe("allocator", func() {
 			checkAlloc(a, "1", net.IP{192, 168, 1, 1})
 		})
 	})
+	Context("single ip ranges", func() {
+		It("/32 network", func() {
+			session, err := storePkg.New(
+				filepath.Join(GinkgoT().TempDir(), "test_store")).Open(context.Background())
+			Expect(err).NotTo(HaveOccurred())
+			defer func() {
+				_ = session.Commit()
+			}()
+			p := allocator.RangeSet{
+				allocator.Range{Subnet: mustSubnet("192.168.1.10/32")},
+			}
+			Expect(p.Canonicalize()).NotTo(HaveOccurred())
+			a := allocator.NewIPAllocator(&p, nil, testPoolName, session)
+			// get range iterator and do the first Next
+			checkAlloc(a, "0", net.IP{192, 168, 1, 10})
+			_, err = a.Allocate("1", testIFName, types.ReservationMetadata{}, nil)
+			Expect(err).To(MatchError(ContainSubstring("no free addresses in the allocated range")))
+		})
+		It("/24 network", func() {
+			session, err := storePkg.New(
+				filepath.Join(GinkgoT().TempDir(), "test_store")).Open(context.Background())
+			Expect(err).NotTo(HaveOccurred())
+			defer func() {
+				_ = session.Commit()
+			}()
+			p := allocator.RangeSet{
+				allocator.Range{
+					Subnet:     mustSubnet("192.168.1.0/24"),
+					RangeStart: net.ParseIP("192.168.1.100"),
+					RangeEnd:   net.ParseIP("192.168.1.100"),
+				},
+			}
+			Expect(p.Canonicalize()).NotTo(HaveOccurred())
+			a := allocator.NewIPAllocator(&p, nil, testPoolName, session)
+			// get range iterator and do the first Next
+			checkAlloc(a, "0", net.IP{192, 168, 1, 100})
+			_, err = a.Allocate("1", testIFName, types.ReservationMetadata{}, nil)
+			Expect(err).To(MatchError(ContainSubstring("no free addresses in the allocated range")))
+		})
+	})
 	Context("IP address exclusion", func() {
 		It("should exclude IPs", func() {
 			session, err := storePkg.New(

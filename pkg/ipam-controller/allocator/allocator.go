@@ -71,12 +71,16 @@ func (pa *PoolAllocator) AllocateFromPool(ctx context.Context, node string) (*Al
 		return &existingAlloc, nil
 	}
 	allocations := pa.getAllocationsAsSlice()
+	// determine the first possible range for the subnet
 	var startIP net.IP
-	if len(allocations) == 0 || ip.Distance(pa.cfg.Subnet.IP, allocations[0].StartIP) > 2 {
-		// start allocations from the network address if there are no allocations or if the "hole" exist before
-		// the firs allocation
-		startIP = ip.NextIP(pa.cfg.Subnet.IP)
+	if pa.canUseNetworkAddress() {
+		startIP = pa.cfg.Subnet.IP
 	} else {
+		startIP = ip.NextIP(pa.cfg.Subnet.IP)
+	}
+	// check if the first possible range is already allocated, if so, search for "holes" or use the next subnet
+	if len(allocations) != 0 && allocations[0].StartIP.Equal(startIP) {
+		startIP = nil
 		for i := 0; i < len(allocations); i++ {
 			nextI := i + 1
 			// if last allocation in the list
@@ -122,6 +126,12 @@ func (pa *PoolAllocator) Deallocate(ctx context.Context, node string) {
 	}
 }
 
+// canUseNetworkAddress returns true if it is allowed to use network address in the node range
+// it is allowed to use network address if the subnet is point to point of a single IP subnet
+func (pa *PoolAllocator) canUseNetworkAddress() bool {
+	return ip.IsPointToPointSubnet(pa.cfg.Subnet) || ip.IsSingleIPSubnet(pa.cfg.Subnet)
+}
+
 // load loads range to the pool allocator with validation for conflicts
 func (pa *PoolAllocator) load(ctx context.Context, nodeName string, allocRange AllocatedRange) error {
 	log := pa.getLog(ctx, pa.cfg).WithValues("node", nodeName)
@@ -147,21 +157,29 @@ func (pa *PoolAllocator) checkAllocation(allocRange AllocatedRange) error {
 	if !pa.cfg.Subnet.Contains(allocRange.StartIP) || !pa.cfg.Subnet.Contains(allocRange.EndIP) {
 		return fmt.Errorf("invalid allocation allocators: start or end IP is out of the subnet")
 	}
-
-	if ip.Cmp(allocRange.EndIP, allocRange.StartIP) <= 0 {
-		return fmt.Errorf("invalid allocation allocators: start IP must be less then end IP")
+	if ip.Cmp(allocRange.EndIP, allocRange.StartIP) < 0 {
+		return fmt.Errorf("invalid allocation allocators: start IP must be less or equal to end IP")
 	}
-
-	// check that StartIP of the range has valid offset.
-	// all ranges have same size, so we can simply check that (StartIP offset - 1) % pa.cfg.PerNodeBlockSize == 0
-	// -1 required because we skip network addressee (e.g. in 192.168.0.0/24, first allocation will be 192.168.0.1)
 	distanceFromNetworkStart := ip.Distance(pa.cfg.Subnet.IP, allocRange.StartIP)
-	if distanceFromNetworkStart < 1 ||
-		math.Mod(float64(distanceFromNetworkStart)-1, float64(pa.cfg.PerNodeBlockSize)) != 0 {
-		return fmt.Errorf("invalid start IP offset")
+	// check that StartIP of the range has valid offset.
+	// all ranges have same size, so we can simply check that (StartIP offset) % pa.cfg.PerNodeBlockSize == 0
+	if pa.canUseNetworkAddress() {
+		if math.Mod(float64(distanceFromNetworkStart), float64(pa.cfg.PerNodeBlockSize)) != 0 {
+			return fmt.Errorf("invalid start IP offset")
+		}
+	} else {
+		if distanceFromNetworkStart < 1 ||
+			// -1 required because we skip network address (e.g. in 192.168.0.0/24, first allocation will be 192.168.0.1)
+			math.Mod(float64(distanceFromNetworkStart)-1, float64(pa.cfg.PerNodeBlockSize)) != 0 {
+			return fmt.Errorf("invalid start IP offset")
+		}
 	}
 	if ip.Distance(allocRange.StartIP, allocRange.EndIP) != int64(pa.cfg.PerNodeBlockSize)-1 {
 		return fmt.Errorf("ip count mismatch")
+	}
+	// for single IP ranges we need to discard allocation if it matches the gateway
+	if pa.cfg.PerNodeBlockSize == 1 && pa.cfg.Gateway != nil && allocRange.StartIP.Equal(pa.cfg.Gateway) {
+		return fmt.Errorf("gw can't be allocated when perNodeBlockSize is 1")
 	}
 	return nil
 }
@@ -169,7 +187,14 @@ func (pa *PoolAllocator) checkAllocation(allocRange AllocatedRange) error {
 // return slice with allocated ranges.
 // ranges are not overlap and are sorted, but there can be "holes" between ranges
 func (pa *PoolAllocator) getAllocationsAsSlice() []AllocatedRange {
-	allocatedRanges := make([]AllocatedRange, 0, len(pa.allocations))
+	allocatedRanges := make([]AllocatedRange, 0, len(pa.allocations)+1)
+
+	if pa.cfg.PerNodeBlockSize == 1 && pa.cfg.Gateway != nil {
+		// in case if perNodeBlockSize is 1 we should not allocate the gateway,
+		// add a "virtual" allocation for the gateway if we detect that only 1 IP is requested per node,
+		// this allocation should never be exposed to the CR's status
+		allocatedRanges = append(allocatedRanges, AllocatedRange{StartIP: pa.cfg.Gateway, EndIP: pa.cfg.Gateway})
+	}
 	for _, a := range pa.allocations {
 		allocatedRanges = append(allocatedRanges, a)
 	}

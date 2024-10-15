@@ -65,37 +65,46 @@ var _ = Describe("IP ranges", func() {
 			RangeEnd:   net.IP{192, 0, 2, 1},
 		}))
 	})
+	It("should generate sane defaults for a /32 ipv4 subnet", func() {
+		subnetStr := "192.0.2.10/32"
+		r := allocator.Range{Subnet: mustSubnet(subnetStr)}
+
+		err := r.Canonicalize()
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(r).To(Equal(allocator.Range{
+			Subnet:     networkSubnet(subnetStr),
+			RangeStart: net.IP{192, 0, 2, 10},
+			RangeEnd:   net.IP{192, 0, 2, 10},
+		}))
+	})
 	It("should reject ipv4 subnet using a masked address", func() {
 		subnetStr := "192.0.2.12/24"
 		r := allocator.Range{Subnet: mustSubnet(subnetStr)}
 
 		err := r.Canonicalize()
-		Expect(err).Should(MatchError("network has host bits set. " +
-			"For a subnet mask of length 24 the network address is 192.0.2.0"))
+		Expect(err).Should(MatchError("network has host bits set. Expected subnet address is 192.0.2.0"))
 	})
 	It("should reject ipv6 subnet using a masked address", func() {
 		subnetStr := "2001:DB8:1::24:19ff:fee1:c44a/64"
 		r := allocator.Range{Subnet: mustSubnet(subnetStr)}
 
 		err := r.Canonicalize()
-		Expect(err).Should(MatchError("network has host bits set. " +
-			"For a subnet mask of length 64 the network address is 2001:db8:1::"))
+		Expect(err).Should(MatchError("network has host bits set. Expected subnet address is 2001:db8:1::"))
 	})
 	It("should reject ipv6 prefix with host bit set", func() {
 		subnetStr := "2001:DB8:24:19ff::/63"
 		r := allocator.Range{Subnet: mustSubnet(subnetStr)}
 
 		err := r.Canonicalize()
-		Expect(err).Should(MatchError("network has host bits set. " +
-			"For a subnet mask of length 63 the network address is 2001:db8:24:19fe::"))
+		Expect(err).Should(MatchError("network has host bits set. Expected subnet address is 2001:db8:24:19fe::"))
 	})
 	It("should reject ipv4 network with host bit set", func() {
 		subnetStr := "192.168.127.0/23"
 		r := allocator.Range{Subnet: mustSubnet(subnetStr)}
 
 		err := r.Canonicalize()
-		Expect(err).Should(MatchError("network has host bits set." +
-			" For a subnet mask of length 23 the network address is 192.168.126.0"))
+		Expect(err).Should(MatchError("network has host bits set. Expected subnet address is 192.168.126.0"))
 	})
 	It("should generate sane defaults for ipv6 with a clean prefix", func() {
 		subnetStr := "2001:DB8:1::/64"
@@ -125,10 +134,18 @@ var _ = Describe("IP ranges", func() {
 		}))
 	})
 
-	It("Should reject a network that's too small", func() {
-		r := allocator.Range{Subnet: mustSubnet("192.0.2.0/32")}
+	It("should generate sane defaults for /128 ipv6 prefix", func() {
+		subnetStr := "2001:DB8:1::10/128"
+		r := allocator.Range{Subnet: mustSubnet(subnetStr)}
+
 		err := r.Canonicalize()
-		Expect(err).Should(MatchError("network 192.0.2.0/32 too small to allocate from"))
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(r).To(Equal(allocator.Range{
+			Subnet:     networkSubnet(subnetStr),
+			RangeStart: net.ParseIP("2001:DB8:1::10"),
+			RangeEnd:   net.ParseIP("2001:DB8:1::10"),
+		}))
 	})
 
 	It("should reject invalid RangeStart and RangeEnd specifications", func() {
@@ -167,6 +184,25 @@ var _ = Describe("IP ranges", func() {
 		}
 		err = r.Canonicalize()
 		Expect(err).Should(MatchError("RangeStart 192.0.2.3 not in network 192.0.2.2/31"))
+	})
+
+	It("should reject invalid RangeStart and RangeEnd for single IP networks", func() {
+		subnetStr := "192.0.2.2/32"
+		r := allocator.Range{Subnet: mustSubnet(subnetStr), RangeStart: net.ParseIP("192.0.2.1")}
+		err := r.Canonicalize()
+		Expect(err).Should(MatchError("RangeStart 192.0.2.1 not in network 192.0.2.2/32"))
+
+		r = allocator.Range{Subnet: mustSubnet(subnetStr), RangeEnd: net.ParseIP("192.0.2.3")}
+		err = r.Canonicalize()
+		Expect(err).Should(MatchError("RangeEnd 192.0.2.3 not in network 192.0.2.2/32"))
+
+		r = allocator.Range{
+			Subnet:     networkSubnet(subnetStr),
+			RangeStart: net.ParseIP("192.0.2.3"),
+			RangeEnd:   net.ParseIP("192.0.2.2"),
+		}
+		err = r.Canonicalize()
+		Expect(err).Should(MatchError("RangeStart 192.0.2.3 not in network 192.0.2.2/32"))
 	})
 
 	It("should parse all fields correctly", func() {
@@ -219,6 +255,58 @@ var _ = Describe("IP ranges", func() {
 			RangeStart: net.ParseIP("2001:DB8:1::4"),
 			RangeEnd:   net.ParseIP("2001:DB8:1::5"),
 			Gateway:    net.ParseIP("2001:DB8:1::4"),
+		}))
+	})
+
+	It("Should parse /32 and /128 correctly", func() {
+		subnetStr := "192.0.2.2/32"
+		r := allocator.Range{
+			Subnet:     mustSubnet(subnetStr),
+			RangeStart: net.ParseIP("192.0.2.2"),
+			RangeEnd:   net.ParseIP("192.0.2.2"),
+			Gateway:    net.ParseIP("192.0.2.2"),
+		}
+		Expect(r.Canonicalize()).NotTo(HaveOccurred())
+
+		Expect(r).To(Equal(allocator.Range{
+			Subnet:     networkSubnet(subnetStr),
+			RangeStart: net.IP{192, 0, 2, 2},
+			RangeEnd:   net.IP{192, 0, 2, 2},
+			Gateway:    net.IP{192, 0, 2, 2},
+		}))
+
+		subnetV6Str := "2001:DB8:1::4/128"
+		r = allocator.Range{
+			Subnet:     mustSubnet(subnetV6Str),
+			RangeStart: net.ParseIP("2001:DB8:1::4"),
+			RangeEnd:   net.ParseIP("2001:DB8:1::4"),
+			Gateway:    net.ParseIP("2001:DB8:1::4"),
+		}
+		Expect(r.Canonicalize()).NotTo(HaveOccurred())
+
+		Expect(r).To(Equal(allocator.Range{
+			Subnet:     mustSubnet(subnetV6Str),
+			RangeStart: net.ParseIP("2001:DB8:1::4"),
+			RangeEnd:   net.ParseIP("2001:DB8:1::4"),
+			Gateway:    net.ParseIP("2001:DB8:1::4"),
+		}))
+	})
+
+	It("Should handle single IP range in a large subnet correctly", func() {
+		subnetStr := "192.0.2.0/24"
+		r := allocator.Range{
+			Subnet:     mustSubnet(subnetStr),
+			RangeStart: net.ParseIP("192.0.2.10"),
+			RangeEnd:   net.ParseIP("192.0.2.10"),
+			Gateway:    net.ParseIP("192.0.2.1"),
+		}
+		Expect(r.Canonicalize()).NotTo(HaveOccurred())
+
+		Expect(r).To(Equal(allocator.Range{
+			Subnet:     networkSubnet(subnetStr),
+			RangeStart: net.IP{192, 0, 2, 10},
+			RangeEnd:   net.IP{192, 0, 2, 10},
+			Gateway:    net.IP{192, 0, 2, 1},
 		}))
 	})
 

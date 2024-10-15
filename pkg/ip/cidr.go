@@ -138,6 +138,9 @@ func IsBroadcast(ip net.IP, network *net.IPNet) bool {
 	if network.IP.To4() == nil {
 		return false
 	}
+	if IsPointToPointSubnet(network) || IsSingleIPSubnet(network) {
+		return false
+	}
 	if !network.Contains(ip) {
 		return false
 	}
@@ -153,8 +156,17 @@ func IsPointToPointSubnet(network *net.IPNet) bool {
 	return ones == maskLen-1
 }
 
+// IsSingleIPSubnet returns true if the network is a single IP subnet (/32 or /128)
+func IsSingleIPSubnet(network *net.IPNet) bool {
+	ones, maskLen := network.Mask.Size()
+	return ones == maskLen
+}
+
 // LastIP returns the last IP of a subnet, excluding the broadcast if IPv4 (if not /31 net)
 func LastIP(network *net.IPNet) net.IP {
+	if IsSingleIPSubnet(network) {
+		return network.IP
+	}
 	var end net.IP
 	for i := 0; i < len(network.IP); i++ {
 		end = append(end, network.IP[i]|^network.Mask[i])

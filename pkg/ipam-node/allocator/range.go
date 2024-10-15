@@ -38,12 +38,6 @@ func (r *Range) Canonicalize() error {
 		return err
 	}
 
-	// Can't create an allocator for /32 or /128 networks (single IP)
-	ones, masklen := r.Subnet.Mask.Size()
-	if ones > masklen-1 {
-		return fmt.Errorf("network %s too small to allocate from", (*net.IPNet)(&r.Subnet).String())
-	}
-
 	if len(r.Subnet.IP) != len(r.Subnet.Mask) {
 		return fmt.Errorf("IPNet IP and Mask version mismatch")
 	}
@@ -52,7 +46,7 @@ func (r *Range) Canonicalize() error {
 	networkIP := r.Subnet.IP.Mask(r.Subnet.Mask)
 	if !r.Subnet.IP.Equal(networkIP) {
 		return fmt.Errorf("network has host bits set. "+
-			"For a subnet mask of length %d the network address is %s", ones, networkIP.String())
+			"Expected subnet address is %s", networkIP.String())
 	}
 
 	// validate Gateway only if set
@@ -74,7 +68,7 @@ func (r *Range) Canonicalize() error {
 			return fmt.Errorf("RangeStart %s not in network %s", r.RangeStart.String(), (*net.IPNet)(&r.Subnet).String())
 		}
 	} else {
-		if ip.IsPointToPointSubnet((*net.IPNet)(&r.Subnet)) {
+		if ip.IsPointToPointSubnet((*net.IPNet)(&r.Subnet)) || ip.IsSingleIPSubnet((*net.IPNet)(&r.Subnet)) {
 			r.RangeStart = r.Subnet.IP
 		} else {
 			r.RangeStart = ip.NextIP(r.Subnet.IP)
