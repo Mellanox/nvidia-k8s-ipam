@@ -38,9 +38,11 @@ import (
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/term"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlconf "sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
@@ -141,7 +143,10 @@ func RunNodeDaemon(ctx context.Context, config *rest.Config, opts *options.Optio
 	poolManager := poolPkg.NewManager()
 
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
-		Scheme:                 scheme,
+		Scheme: scheme,
+		Controller: ctrlconf.Controller{
+			SkipNameValidation: ptr.To(true),
+		},
 		Metrics:                metricsserver.Options{BindAddress: opts.MetricsAddr},
 		HealthProbeBindAddress: opts.ProbeAddr,
 		Cache: cache.Options{

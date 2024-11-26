@@ -282,12 +282,12 @@ func (r *CIDRPoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&ipamv1alpha1.CIDRPool{}).
 		// catch notifications received through chan from Node controller
-		WatchesRawSource(&source.Channel{Source: r.NodeEventCh}, handler.Funcs{
-			GenericFunc: func(ctx context.Context, e event.GenericEvent, q workqueue.RateLimitingInterface) {
+		WatchesRawSource(source.Channel(r.NodeEventCh, handler.Funcs{
+			GenericFunc: func(ctx context.Context, e event.TypedGenericEvent[client.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
 					Namespace: e.Object.GetNamespace(),
 					Name:      e.Object.GetName(),
 				}})
-			}}).
+			}})).
 		Complete(r)
 }
