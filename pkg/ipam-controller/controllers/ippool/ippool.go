@@ -115,7 +115,7 @@ func (r *IPPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		// AllocateFromPool will return same allocation if it was already allocated
 		a, err := pa.AllocateFromPool(ctx, name)
 		if err != nil {
-			if errors.Is(allocator.ErrNoFreeRanges, err) {
+			if errors.Is(err, allocator.ErrNoFreeRanges) {
 				msg := fmt.Sprintf("failed to allocate IPs on Node: %s", name)
 				reqLog.Error(err, msg)
 				r.recorder.Event(pool, "Warning", "NoFreeRanges", msg)
@@ -160,7 +160,8 @@ func (r *IPPoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&ipamv1alpha1.IPPool{}).
 		// catch notifications received through chan from Node controller
 		WatchesRawSource(source.Channel(r.NodeEventCh, handler.Funcs{
-			GenericFunc: func(ctx context.Context, e event.TypedGenericEvent[client.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+			GenericFunc: func(ctx context.Context, e event.TypedGenericEvent[client.Object],
+				q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
 					Namespace: e.Object.GetNamespace(),
 					Name:      e.Object.GetName(),

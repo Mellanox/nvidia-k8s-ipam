@@ -192,6 +192,7 @@ func LastIP(network *net.IPNet) net.IP {
 // println(gen().String()) // <nil> - no more ranges available
 func GetSubnetGen(network *net.IPNet, prefixSize int32) func() *net.IPNet {
 	networkOnes, netBitsTotal := network.Mask.Size()
+	//nolint: gosec
 	if prefixSize < int32(networkOnes) || prefixSize > int32(netBitsTotal) {
 		return func() *net.IPNet { return nil }
 	}

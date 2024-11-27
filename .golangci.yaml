@@ -27,29 +27,21 @@ linters:
     - bodyclose
     - containedctx
     - contextcheck
-    #- cyclop
     - decorder
-    - depguard
     - dogsled
     - durationcheck
     - errcheck
     - errchkjson
     - errname
-    #- errorlint
-    - execinquery
-    - exportloopref
     - forbidigo
     - forcetypeassert
     - funlen
-    #- gocognit
     - goconst
     - gocritic
     - gocyclo
-    #- goerr113
     - gofmt
     - goheader
     - goimports
-    #- gomnd
     - gomodguard
     - goprintffuncname
     - gosec
@@ -60,12 +52,11 @@ linters:
     - ineffassign
     - interfacebloat
     - lll
-    - logrlint
+    - loggercheck
     - maintidx
     - makezero
     - misspell
     - nakedret
-    #- nestif
     - nilerr
     - nilnil
     - noctx
@@ -89,7 +80,6 @@ linters:
     - usestdlibvars
     - wastedassign
     - whitespace
-    #- wsl
 
 linters-settings:
   dupl:
@@ -106,13 +96,12 @@ linters-settings:
     local-prefixes: github.com/Mellanox/nvidia-k8s-ipam
   lll:
     line-length: 120
-  gomnd:
-    settings:
-      mnd:
-        # don't include the "operation" and "assign"
-        checks: [argument,case,condition,return]
   misspell:
     locale: US
+  revive:
+    rules:
+      - name: unused-parameter
+        disabled: true
   stylecheck:
     dot-import-whitelist:
       - github.com/onsi/ginkgo

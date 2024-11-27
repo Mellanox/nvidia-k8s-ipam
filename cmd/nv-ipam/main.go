@@ -25,5 +25,5 @@ import (
 func main() {
 	p := plugin.NewPlugin()
 	about := fmt.Sprintf("%s CNI plugin %s", p.Name, p.Version)
-	skel.PluginMain(p.CmdAdd, p.CmdCheck, p.CmdDel, version.All, about)
+	skel.PluginMainFuncs(skel.CNIFuncs{Add: p.CmdAdd, Check: p.CmdCheck, Del: p.CmdDel}, version.All, about)
 }

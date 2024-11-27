@@ -218,9 +218,7 @@ var _ = Describe("IPAM Node daemon", func() {
 		createTestCIDRPools()
 		pod := createTestPod()
 
-		conn, err := grpc.DialContext(ctx, opts.CNIDaemonSocket,
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithBlock())
+		conn, err := grpc.NewClient(opts.CNIDaemonSocket, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		Expect(err).NotTo(HaveOccurred())
 
 		grpcClient := nodev1.NewIPAMServiceClient(conn)
