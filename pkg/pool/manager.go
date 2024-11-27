@@ -13,12 +13,53 @@
 
 package pool
 
-import "sync"
+import (
+	"encoding/json"
+	"sync"
+)
+
+// Pool represents generic pool configuration
+type Pool struct {
+	Name           string           `json:"-"`
+	Subnet         string           `json:"subnet"`
+	StartIP        string           `json:"startIP"`
+	EndIP          string           `json:"endIP"`
+	Gateway        string           `json:"gateway"`
+	Exclusions     []ExclusionRange `json:"exclusions"`
+	Routes         []Route          `json:"routes"`
+	DefaultGateway bool             `json:"defaultGateway"`
+}
+
+// ExclusionRange contains range of IP to exclude from the allocation
+type ExclusionRange struct {
+	StartIP string `json:"startIP"`
+	EndIP   string `json:"endIP"`
+}
+
+// Route contains a destination CIDR to be added as static route via gateway
+type Route struct {
+	Dst string `json:"dst"`
+}
+
+// String return string representation of the IPPool config
+func (p *Pool) String() string {
+	//nolint:errchkjson
+	data, _ := json.Marshal(p)
+	return string(data)
+}
+
+// ConfigReader is an interface to which provides access to the pool configuration
+type ConfigReader interface {
+	// GetPoolByKey returns IPPool for the provided pool name or nil if pool doesn't exist
+	GetPoolByKey(key string) *Pool
+	// GetPools returns map with information about all pools
+	GetPools() map[string]*Pool
+}
 
 // Manager provide access to pools configuration
 type Manager interface {
 	ConfigReader
-	// Update Pool's config from IPPool CR
+	// Update Pool's config from provided Pool object
 	UpdatePool(key string, pool *Pool)
 	// Remove Pool's config by key
 	RemovePool(key string)

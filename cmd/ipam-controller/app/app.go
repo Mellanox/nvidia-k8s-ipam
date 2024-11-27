@@ -31,7 +31,6 @@ import (
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlconf "sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
@@ -49,7 +48,6 @@ import (
 	cidrpoolctrl "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/controllers/cidrpool"
 	ippoolctrl "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/controllers/ippool"
 	nodectrl "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/controllers/node"
-	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/migrator"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/version"
 )
 
@@ -135,34 +133,12 @@ func RunController(ctx context.Context, config *rest.Config, opts *options.Optio
 		return err
 	}
 
-	k8sClient, err := client.New(config,
-		client.Options{Scheme: mgr.GetScheme(), Mapper: mgr.GetRESTMapper()})
-	if err != nil {
-		logger.Error(err, "failed to create k8sClient client")
-		os.Exit(1)
-	}
-
-	migrationChan := make(chan struct{})
-	m := migrator.Migrator{
-		IPPoolsNamespace: opts.IPPoolsNamespace,
-		K8sClient:        k8sClient,
-		MigrationCh:      migrationChan,
-		LeaderElection:   opts.EnableLeaderElection,
-		Logger:           logger.WithName("Migrator"),
-	}
-	err = mgr.Add(&m)
-	if err != nil {
-		logger.Error(err, "failed to add Migrator to the Manager")
-		os.Exit(1)
-	}
-
 	ipPoolNodeEventCH := make(chan event.GenericEvent, 1)
 	cidrPoolNodeEventCH := make(chan event.GenericEvent, 1)
 
 	if err = (&nodectrl.NodeReconciler{
 		IPPoolNodeEventCH:   ipPoolNodeEventCH,
 		CIDRPoolNodeEventCH: cidrPoolNodeEventCH,
-		MigrationCh:         migrationChan,
 		PoolsNamespace:      opts.IPPoolsNamespace,
 		Client:              mgr.GetClient(),
 		Scheme:              mgr.GetScheme(),
@@ -186,7 +162,6 @@ func RunController(ctx context.Context, config *rest.Config, opts *options.Optio
 		PoolsNamespace: opts.IPPoolsNamespace,
 		Client:         mgr.GetClient(),
 		Scheme:         mgr.GetScheme(),
-		MigrationCh:    migrationChan,
 	}).SetupWithManager(mgr); err != nil {
 		logger.Error(err, "unable to create controller", "controller", "IPPool")
 		return err
