@@ -153,7 +153,7 @@ PROTOC_VER ?= 23.4
 PROTOC_GEN_GO_VER ?= 1.31.0
 PROTOC_GEN_GO_GRPC_VER ?= 1.3.0
 BUF_VERSION ?= 1.23.1
-CONTROLLER_GEN_VERSION ?= v0.13.0
+CONTROLLER_GEN_VERSION ?= v0.16.5
 
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
