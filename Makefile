@@ -149,10 +149,10 @@ CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 GOLANGCILINT_VERSION ?= v1.62.2
 GCOV2LCOV_VERSION ?= v1.0.5
 MOCKERY_VERSION ?= v2.49.1
-PROTOC_VER ?= 23.4
-PROTOC_GEN_GO_VER ?= 1.31.0
-PROTOC_GEN_GO_GRPC_VER ?= 1.3.0
-BUF_VERSION ?= 1.23.1
+PROTOC_VER ?= 28.3
+PROTOC_GEN_GO_VER ?= 1.35.2
+PROTOC_GEN_GO_GRPC_VER ?= 1.5.1
+BUF_VERSION ?= 1.47.2
 CONTROLLER_GEN_VERSION ?= v0.16.5
 
 .PHONY: envtest
@@ -249,7 +249,7 @@ grpc-check: grpc-format grpc-lint protoc protoc-gen-go protoc-gen-go-grpc $(GRPC
 grpc-lint: buf  ## Lint GRPC files
 	@echo "lint protobuf files";
 	cd $(PROTO_DIR) && \
-	$(BUF) lint --config ../buf.yaml
+	$(BUF) lint --config ../buf.yaml .
 
 .PHONY: grpc-format
 grpc-format: buf  ## Format GRPC files
