@@ -120,7 +120,7 @@ kind-load-image:  ## Load ipam image to kind cluster
 
 .PHONY: generate-mocks
 generate-mocks: mockery ## generate mock objects
-	PATH=$(LOCALBIN):$(PATH) go generate ./...
+	PATH="$(LOCALBIN):$(PATH)" mockery
 
 ## Location to install dependencies to
 LOCALBIN ?= $(PROJECT_DIR)/bin
@@ -148,7 +148,7 @@ CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ## Tool Versions
 GOLANGCILINT_VERSION ?= v1.62.2
 GCOV2LCOV_VERSION ?= v1.0.5
-MOCKERY_VERSION ?= v2.27.1
+MOCKERY_VERSION ?= v2.49.1
 PROTOC_VER ?= 23.4
 PROTOC_GEN_GO_VER ?= 1.31.0
 PROTOC_GEN_GO_GRPC_VER ?= 1.3.0

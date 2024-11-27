@@ -38,8 +38,6 @@ var (
 )
 
 // Store implements API to open file store in exclusive mode
-//
-//go:generate mockery --name Store
 type Store interface {
 	// Open returns a session for the store with exclusive lock.
 	// returns an error if failed to read persistedData from the disk.
@@ -50,8 +48,6 @@ type Store interface {
 }
 
 // Session is the interface implemented by the store package
-//
-//go:generate mockery --name Session
 type Session interface {
 	// Reserve reserves IP for the id and interface name,
 	// returns error if allocation failed

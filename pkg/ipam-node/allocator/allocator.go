@@ -32,8 +32,6 @@ var (
 )
 
 // IPAllocator is the interface of the allocate package
-//
-//go:generate mockery --name IPAllocator
 type IPAllocator interface {
 	// Allocate allocates IP address from the range for the container identified by ID and ifName
 	Allocate(id string, ifName string, meta types.ReservationMetadata, staticIP net.IP) (*current.IPConfig, error)

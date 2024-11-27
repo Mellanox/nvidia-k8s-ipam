@@ -44,8 +44,6 @@ const (
 )
 
 // ConfLoader loads CNI configuration
-//
-//go:generate mockery --name ConfLoader
 type ConfLoader interface {
 	// LoadConf loads configuration from CNI CmdArgs
 	LoadConf(args *skel.CmdArgs) (*NetConf, error)

@@ -37,9 +37,6 @@ const (
 )
 
 // GRPCClient is an interface for the client which is used to communicate with NVIDIA IPAM Node Daemon
-//
-//go:generate mockery --name GRPCClient
-
 type GRPCClient interface {
 	nodev1.IPAMServiceClient
 }
