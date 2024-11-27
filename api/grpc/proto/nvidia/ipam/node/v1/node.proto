@@ -15,8 +15,11 @@ package nvidia.ipam.node.v1;
 
 // indicates type of the pool which is referred by the name
 enum PoolType {
+  // the pool type is not specified
   POOL_TYPE_UNSPECIFIED = 0;
+  // the pool type is IPPool
   POOL_TYPE_IPPOOL = 1;
+  // the pool type is CIDRPool
   POOL_TYPE_CIDRPOOL = 2;
 }
 
@@ -131,6 +134,7 @@ message AllocationInfo {
   repeated Route routes = 5;
 }
 
+// Route contains route configuration for the allocation
 message Route {
   // Static route destination in CIDR format
   string dest = 1;

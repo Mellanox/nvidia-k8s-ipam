@@ -4,7 +4,7 @@ jobs:
   build:
     strategy:
       matrix:
-        go-version: [1.21.x]
+        go-version: [1.23.x]
         goarch: [amd64]
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
@@ -27,7 +27,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: 1.21.x
+          go-version: 1.23.x
       - name: Check out code into the Go module directory
         uses: actions/checkout@v3
       - name: Lint
@@ -39,7 +39,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: 1.21.x
+          go-version: 1.23.x
       - name: Check out code into the Go module directory
         uses: actions/checkout@v3
       - name: Check GRPC
@@ -51,7 +51,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: 1.21.x
+          go-version: 1.23.x
       - name: Check out code into the Go module directory
         uses: actions/checkout@v3
       - name: Run tests
@@ -73,7 +73,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: 1.21.x
+          go-version: 1.23.x
       # if this fails, run go mod tidy
       - name: Check if module files are consistent with code
         run: go mod tidy && git diff --exit-code
@@ -88,7 +88,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: 1.21.x
+          go-version: 1.23.x
       - name: Generate coverage report
         run: make cov-report
       - name: Upload to Coveralls

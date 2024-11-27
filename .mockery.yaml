@@ -1,4 +1,34 @@
-inpackage: False
-testonly: False
 with-expecter: True
-keeptree: True
+issue-845-fix: True
+dir: "{{.InterfaceDir}}/mocks"
+mockname: "{{.InterfaceName}}"
+outpkg: "mocks"
+filename: "{{.InterfaceName}}.go"
+all: True
+packages:
+  github.com/Mellanox/nvidia-k8s-ipam/pkg/cni/plugin:
+    config:
+      all: False
+    interfaces:
+      GRPCClient:
+  github.com/Mellanox/nvidia-k8s-ipam/pkg/cni/types:
+    config:
+      all: False
+    interfaces:
+      ConfLoader:
+  github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/allocator:
+    config:
+      all: False
+    interfaces:
+      IPAllocator:
+  github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/store:
+    config:
+      all: False
+    interfaces:
+      Store:
+      Session:
+  github.com/Mellanox/nvidia-k8s-ipam/pkg/pool:
+    config:
+      all: False
+    interfaces:
+      Manager:

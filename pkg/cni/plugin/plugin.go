@@ -37,9 +37,6 @@ const (
 )
 
 // GRPCClient is an interface for the client which is used to communicate with NVIDIA IPAM Node Daemon
-//
-//go:generate mockery --name GRPCClient
-
 type GRPCClient interface {
 	nodev1.IPAMServiceClient
 }
@@ -236,7 +233,7 @@ func cniConfToGRPCReq(conf *types.NetConf, args *skel.CmdArgs) *nodev1.IPAMParam
 
 // default NewGRPCClientFunc, initializes insecure GRPC connection to provided daemon socket
 func defaultNewGRPCClientFunc(daemonSocket string) (GRPCClient, error) {
-	conn, err := grpc.Dial(daemonSocket, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(daemonSocket, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
 	}

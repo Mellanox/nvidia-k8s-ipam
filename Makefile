@@ -19,7 +19,7 @@ DOCKERFILE ?= Dockerfile
 DOCKER_CMD ?= docker
 
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.27.1
+ENVTEST_K8S_VERSION = 1.31.0
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -120,7 +120,7 @@ kind-load-image:  ## Load ipam image to kind cluster
 
 .PHONY: generate-mocks
 generate-mocks: mockery ## generate mock objects
-	PATH=$(LOCALBIN):$(PATH) go generate ./...
+	PATH="$(LOCALBIN):$(PATH)" mockery
 
 ## Location to install dependencies to
 LOCALBIN ?= $(PROJECT_DIR)/bin
@@ -146,14 +146,14 @@ BUF ?= $(LOCALBIN)/buf
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 
 ## Tool Versions
-GOLANGCILINT_VERSION ?= v1.52.2
+GOLANGCILINT_VERSION ?= v1.62.2
 GCOV2LCOV_VERSION ?= v1.0.5
-MOCKERY_VERSION ?= v2.27.1
-PROTOC_VER ?= 23.4
-PROTOC_GEN_GO_VER ?= 1.31.0
-PROTOC_GEN_GO_GRPC_VER ?= 1.3.0
-BUF_VERSION ?= 1.23.1
-CONTROLLER_GEN_VERSION ?= v0.13.0
+MOCKERY_VERSION ?= v2.49.1
+PROTOC_VER ?= 28.3
+PROTOC_GEN_GO_VER ?= 1.35.2
+PROTOC_GEN_GO_GRPC_VER ?= 1.5.1
+BUF_VERSION ?= 1.47.2
+CONTROLLER_GEN_VERSION ?= v0.16.5
 
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
@@ -249,7 +249,7 @@ grpc-check: grpc-format grpc-lint protoc protoc-gen-go protoc-gen-go-grpc $(GRPC
 grpc-lint: buf  ## Lint GRPC files
 	@echo "lint protobuf files";
 	cd $(PROTO_DIR) && \
-	$(BUF) lint --config ../buf.yaml
+	$(BUF) lint --config ../buf.yaml .
 
 .PHONY: grpc-format
 grpc-format: buf  ## Format GRPC files

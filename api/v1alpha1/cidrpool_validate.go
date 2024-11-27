@@ -71,7 +71,9 @@ func (r *CIDRPool) validateCIDR() field.ErrorList {
 	}
 	setBits, bitsTotal := network.Mask.Size()
 	if r.Spec.PerNodeNetworkPrefix == 0 ||
+		//nolint: gosec
 		r.Spec.PerNodeNetworkPrefix > int32(bitsTotal) ||
+		//nolint: gosec
 		r.Spec.PerNodeNetworkPrefix < int32(setBits) {
 		return field.ErrorList{field.Invalid(
 			field.NewPath("spec", "perNodeNetworkPrefix"),

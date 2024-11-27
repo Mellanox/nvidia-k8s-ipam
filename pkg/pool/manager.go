@@ -16,8 +16,6 @@ package pool
 import "sync"
 
 // Manager provide access to pools configuration
-//
-//go:generate mockery --name Manager
 type Manager interface {
 	ConfigReader
 	// Update Pool's config from IPPool CR
