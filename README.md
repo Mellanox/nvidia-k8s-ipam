@@ -480,7 +480,7 @@ spec:
 
   * `staticAllocations` (optional, list): static allocations for the pool.
 
-      * `nodeName` (optional): name of the node for static allocation, can be empty in case if the prefix should be preallocated without assigning it for a specific node gateway for the node.
+      * `nodeName` (optional): name of the node for static allocation, can be empty in case if the prefix should be preallocated without assigning it for a specific node.
       * `gateway` (optional): gateway for the node, if not set the gateway will be computed from `gatewayIndex`.
       * `prefix`: statically allocated prefix.
 
