@@ -15,7 +15,6 @@ package controllers
 
 import (
 	"context"
-	"fmt"
 
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,18 +34,12 @@ type NodeReconciler struct {
 	PoolsNamespace      string
 	IPPoolNodeEventCH   chan event.GenericEvent
 	CIDRPoolNodeEventCH chan event.GenericEvent
-	MigrationCh         chan struct{}
 	client.Client
 	Scheme *runtime.Scheme
 }
 
 // Reconcile contains logic to sync Node objects
 func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	select {
-	case <-r.MigrationCh:
-	case <-ctx.Done():
-		return ctrl.Result{}, fmt.Errorf("canceled")
-	}
 	reqLog := log.FromContext(ctx)
 	reqLog.Info("Notification on Node", "name", req.Name)
 	node := &corev1.Node{}
