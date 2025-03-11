@@ -1,6 +1,6 @@
 module github.com/Mellanox/nvidia-k8s-ipam
 
-go 1.23
+go 1.24
 
 require (
 	github.com/containernetworking/cni v1.2.3
