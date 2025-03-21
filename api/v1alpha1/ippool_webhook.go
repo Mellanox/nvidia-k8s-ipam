@@ -14,6 +14,8 @@
 package v1alpha1
 
 import (
+	"context"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logPkg "sigs.k8s.io/controller-runtime/pkg/log"
@@ -30,16 +32,16 @@ func (r *IPPool) SetupWebhookWithManager(mgr ctrl.Manager) error {
 		Complete()
 }
 
-var _ webhook.Validator = &IPPool{}
+var _ webhook.CustomValidator = &IPPool{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
-func (r *IPPool) ValidateCreate() (admission.Warnings, error) {
+func (r *IPPool) ValidateCreate(_ context.Context, _ runtime.Object) (admission.Warnings, error) {
 	logger.V(1).Info("validate create", "name", r.Name)
 	return r.validate()
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (r *IPPool) ValidateUpdate(_ runtime.Object) (admission.Warnings, error) {
+func (r *IPPool) ValidateUpdate(_ context.Context, _, _ runtime.Object) (admission.Warnings, error) {
 	logger.V(1).Info("validate update", "name", r.Name)
 	return r.validate()
 }
@@ -56,6 +58,6 @@ func (r *IPPool) validate() (admission.Warnings, error) {
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
-func (r *IPPool) ValidateDelete() (admission.Warnings, error) {
+func (r *IPPool) ValidateDelete(_ context.Context, _ runtime.Object) (admission.Warnings, error) {
 	return nil, nil
 }
