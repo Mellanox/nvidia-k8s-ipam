@@ -17,7 +17,7 @@ RUN make build
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
-FROM gcr.io/distroless/base-debian11:latest
+FROM gcr.io/distroless/base-debian12:latest
 WORKDIR /
 COPY --from=builder /workspace/build/ipam-controller .
 COPY --from=builder /workspace/build/ipam-node .
