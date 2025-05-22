@@ -36,8 +36,6 @@ RUN make build
 FROM nvcr.io/nvidia/distroless/go:v3.1.8
 COPY . /src
 WORKDIR /
-LABEL https://nvcr.io/nvidia/cloud-native/nvidia-k8s-ipam
 COPY --from=builder /workspace/build/ipam-controller .
 COPY --from=builder /workspace/build/ipam-node .
 COPY --from=builder /workspace/build/nv-ipam .
-
