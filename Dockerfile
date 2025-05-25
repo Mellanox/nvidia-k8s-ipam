@@ -1,4 +1,4 @@
-# Copyright 2025 nvidia-k8s-ipam authors
+# Copyright 2025 NVIDIA CORPORATION & AFFILIATES
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,8 +33,10 @@ RUN make build
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
-FROM gcr.io/distroless/base-debian12:latest
+FROM nvcr.io/nvidia/distroless/go:v3.1.8
+COPY . /src
 WORKDIR /
+LABEL https://nvcr.io/nvidia/cloud-native/nvidia-k8s-ipam
 COPY --from=builder /workspace/build/ipam-controller .
 COPY --from=builder /workspace/build/ipam-node .
 COPY --from=builder /workspace/build/nv-ipam .
