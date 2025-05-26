@@ -1,3 +1,5 @@
+include make/license.mk
+
 # Version information
 include Makefile.version
 
@@ -102,7 +104,7 @@ build-cni: ## build IPAM cni
 
 .PHONY: build
 build: build-controller build-node build-cni ## Build project binaries
-	
+
 
 .PHONY: docker-build
 docker-build:  ## Build docker image with ipam binaries
