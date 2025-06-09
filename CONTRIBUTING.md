@@ -37,6 +37,13 @@ entirely.
 Fixes #1
 ```
 
+## Certificate of Origin
+
+In order to get a clear contribution chain of trust we use the [signed-off-by language](https://01.org/community/signed-process)
+used by the Linux kernel project.
+
+DCO can be found [here](https://developercertificate.org/)
+
 ## Contributing Code
 
 * Make sure to create an [Issue](https://github.com/Mellanox/nvidia-k8s-ipam/issues) for bug fix or the feature request.
