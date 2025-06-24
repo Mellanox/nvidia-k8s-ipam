@@ -62,6 +62,7 @@ spec:
                   fieldPath: spec.nodeName
           securityContext:
             privileged: true
+            runAsUser: 0
           command: [ "/ipam-node" ]
           args:
             - --node-name=$(NODE_NAME)
