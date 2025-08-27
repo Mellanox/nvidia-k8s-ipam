@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Build the image
-FROM golang:1.24 AS builder
+FROM golang:1.25 AS builder
 
 WORKDIR /workspace
 # Copy the Go Modules manifests
