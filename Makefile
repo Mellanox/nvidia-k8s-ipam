@@ -38,6 +38,7 @@ GO_BUILD_OPTS ?= CGO_ENABLED=0 GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH)
 # Linker flags for go build command
 GO_LDFLAGS = $(VERSION_LDFLAGS)
 
+GOPROXY ?= $(shell go env GOPROXY)
 
 PKGS = $(or $(PKG),$(shell cd $(PROJECT_DIR) && go list ./... | grep -v "^nvidia-k8s-ipam/vendor/" | grep -v ".*/mocks"))
 
@@ -108,7 +109,7 @@ build: build-controller build-node build-cni ## Build project binaries
 
 .PHONY: docker-build
 docker-build:  ## Build docker image with ipam binaries
-	$(DOCKER_CMD) build -t $(IMG) -f $(DOCKERFILE) .
+	$(DOCKER_CMD) build -t $(IMG) -f $(DOCKERFILE) --build-arg GOPROXY="$(GOPROXY)" .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with ipam binaries
