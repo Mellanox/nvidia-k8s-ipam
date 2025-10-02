@@ -17,6 +17,9 @@
 # Build the image
 FROM golang:1.24 AS builder
 
+ARG GOPROXY
+ENV GOPROXY=$GOPROXY
+
 WORKDIR /workspace
 # Copy the Go Modules manifests
 COPY go.mod go.mod
