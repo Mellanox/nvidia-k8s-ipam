@@ -36,7 +36,7 @@ RUN make build
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
-FROM nvcr.io/nvidia/distroless/go:v3.1.12
+FROM nvcr.io/nvidia/distroless/go:v3.1.13
 COPY . /src
 WORKDIR /
 COPY --from=builder /workspace/build/ipam-controller .
