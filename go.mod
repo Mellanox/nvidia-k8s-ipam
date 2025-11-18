@@ -6,7 +6,7 @@ require (
 	github.com/containernetworking/cni v1.3.0
 	github.com/go-logr/logr v1.4.3
 	github.com/gofrs/flock v0.13.0
-	github.com/google/renameio/v2 v2.0.0
+	github.com/google/renameio/v2 v2.0.1
 	github.com/google/uuid v1.6.0
 	github.com/k8snetworkplumbingwg/cni-log v0.0.0-20241029140110-339dff80b1b8
 	github.com/onsi/ginkgo/v2 v2.27.2
