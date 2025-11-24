@@ -14,7 +14,7 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
       - name: Check out code into the Go module directory
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
       - name: Build
         env:
           GOARCH: ${{ matrix.goarch }}
@@ -29,7 +29,7 @@ jobs:
         with:
           go-version: 1.24.x
       - name: Check out code into the Go module directory
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
       - name: Lint
         run: make lint
   grpc-check:
@@ -41,7 +41,7 @@ jobs:
         with:
           go-version: 1.24.x
       - name: Check out code into the Go module directory
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
       - name: Check GRPC
         run: make grpc-check
   test:
@@ -53,14 +53,14 @@ jobs:
         with:
           go-version: 1.24.x
       - name: Check out code into the Go module directory
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
       - name: Run tests
         run: make test
   build-image:
     runs-on: ubuntu-latest
     steps:
       - name: Check out code into the Go module directory
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Build image
@@ -69,7 +69,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
