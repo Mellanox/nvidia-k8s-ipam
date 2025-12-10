@@ -15,6 +15,7 @@ package controllers
 
 import (
 	"context"
+	"net"
 
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -24,6 +25,7 @@ import (
 
 	ipamv1alpha1 "github.com/Mellanox/nvidia-k8s-ipam/api/v1alpha1"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ip"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
 )
 
@@ -54,10 +56,12 @@ func (r *IPPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	found := false
 	for _, alloc := range ipPool.Status.Allocations {
 		if alloc.NodeName == r.NodeName {
-			exclusions := make([]pool.ExclusionRange, 0, len(ipPool.Spec.Exclusions))
+			exclusions := make([]pool.ExclusionRange, 0, len(ipPool.Spec.Exclusions)+len(ipPool.Spec.PerNodeExclusions))
 			for _, e := range ipPool.Spec.Exclusions {
 				exclusions = append(exclusions, pool.ExclusionRange{StartIP: e.StartIP, EndIP: e.EndIP})
 			}
+			// Convert per-node index-based exclusions to IP-based exclusions
+			exclusions = append(exclusions, buildPerNodeExclusions(ipPool.Spec.PerNodeExclusions, alloc.StartIP, alloc.EndIP)...)
 			routes := make([]pool.Route, 0, len(ipPool.Spec.Routes))
 			for _, r := range ipPool.Spec.Routes {
 				routes = append(routes, pool.Route{Dst: r.Dst})
@@ -81,6 +85,56 @@ func (r *IPPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		r.PoolManager.RemovePool(poolKey)
 	}
 	return ctrl.Result{}, nil
+}
+
+// buildPerNodeExclusions converts index-based exclusions to IP-based exclusions
+// for the node's allocated IP range
+func buildPerNodeExclusions(
+	ranges []ipamv1alpha1.ExcludeIndexRange, startIP string, endIP string) []pool.ExclusionRange {
+	if len(ranges) == 0 {
+		return nil
+	}
+
+	rangeStart := net.ParseIP(startIP)
+	rangeEnd := net.ParseIP(endIP)
+	if rangeStart == nil || rangeEnd == nil {
+		return nil
+	}
+
+	exclusions := make([]pool.ExclusionRange, 0, len(ranges))
+	for _, r := range ranges {
+		// Convert start index to IP
+		excludeStartIP := ip.NextIPWithOffset(rangeStart, int64(r.StartIndex))
+		if excludeStartIP == nil {
+			continue
+		}
+
+		// Convert end index to IP
+		excludeEndIP := ip.NextIPWithOffset(rangeStart, int64(r.EndIndex))
+		if excludeEndIP == nil {
+			continue
+		}
+
+		// Check if the exclusion range is within the node's allocation
+		// Skip if both IPs are outside the range
+		if ip.Cmp(excludeEndIP, rangeStart) < 0 || ip.Cmp(excludeStartIP, rangeEnd) > 0 {
+			continue
+		}
+
+		// Clamp to the node's range
+		if ip.Cmp(excludeStartIP, rangeStart) < 0 {
+			excludeStartIP = rangeStart
+		}
+		if ip.Cmp(excludeEndIP, rangeEnd) > 0 {
+			excludeEndIP = rangeEnd
+		}
+
+		exclusions = append(exclusions, pool.ExclusionRange{
+			StartIP: excludeStartIP.String(),
+			EndIP:   excludeEndIP.String(),
+		})
+	}
+	return exclusions
 }
 
 // SetupWithManager sets up the controller with the Manager.

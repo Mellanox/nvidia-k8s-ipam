@@ -20,8 +20,11 @@ spec:
   subnet: "192.168.0.0/16"
   perNodeBlockSize: 128
   exclusions: 
-  - startIP: "192.168.0.200" # exclude single IP
+  - startIP: "192.168.0.200" # exclude single IP from the entire pool
     endIP: "192.168.0.200"
+  perNodeExclusions:
+  - startIndex: 0   # exclude first 10 IPs from each node's allocation
+    endIndex: 9
   gateway: "192.168.0.1"
 ```
 
@@ -107,4 +110,4 @@ spec:
 
 * NV-IPAM can statically allocate pool's gateway IP.
 
-* NV-IPAM can statically allocate IPs that are excluded by `CIDRPool.spec.exclusions` and `IPPool.spec.exclusions`.
+* NV-IPAM can statically allocate IPs that are excluded by `CIDRPool.spec.exclusions`, `IPPool.spec.exclusions`, `CIDRPool.spec.perNodeExclusions`, and `IPPool.spec.perNodeExclusions`.

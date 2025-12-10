@@ -36,6 +36,12 @@ type ExclusionRange struct {
 	EndIP   string `json:"endIP"`
 }
 
+// ExclusionIndexRange contains range of IP indexes to exclude from the allocation
+type ExclusionIndexRange struct {
+	StartIndex int `json:"startIndex"`
+	EndIndex   int `json:"endIndex"`
+}
+
 // Route contains a destination CIDR to be added as static route via gateway
 type Route struct {
 	Dst string `json:"dst"`

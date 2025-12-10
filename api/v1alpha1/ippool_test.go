@@ -249,7 +249,7 @@ var _ = Describe("Validate", func() {
 			Spec: v1alpha1.IPPoolSpec{
 				Subnet:           "2001:db8:3333:4444::0/64",
 				PerNodeBlockSize: 128,
-				DefaultGateway: true,
+				DefaultGateway:   true,
 				Routes: []v1alpha1.Route{
 					{
 						Dst: "::/0",
@@ -268,7 +268,7 @@ var _ = Describe("Validate", func() {
 			Spec: v1alpha1.IPPoolSpec{
 				Subnet:           "192.168.0.0/16",
 				PerNodeBlockSize: 128,
-				DefaultGateway: true,
+				DefaultGateway:   true,
 				Routes: []v1alpha1.Route{
 					{
 						Dst: "0.0.0.0/0",
@@ -279,6 +279,172 @@ var _ = Describe("Validate", func() {
 		Expect(ipPool.Validate().ToAggregate().Error()).
 			To(
 				ContainSubstring("spec.routes"),
+			)
+	})
+	It("Valid - PerNodeExclusions", func() {
+		ipPool := v1alpha1.IPPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.IPPoolSpec{
+				Subnet:           "192.168.0.0/16",
+				PerNodeBlockSize: 128,
+				PerNodeExclusions: []v1alpha1.ExcludeIndexRange{
+					{StartIndex: 0, EndIndex: 10},
+					{StartIndex: 100, EndIndex: 127},
+				},
+			},
+		}
+		Expect(ipPool.Validate()).To(BeEmpty())
+	})
+	It("Valid - PerNodeExclusions single index", func() {
+		ipPool := v1alpha1.IPPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.IPPoolSpec{
+				Subnet:           "192.168.0.0/16",
+				PerNodeBlockSize: 128,
+				PerNodeExclusions: []v1alpha1.ExcludeIndexRange{
+					{StartIndex: 5, EndIndex: 5},
+				},
+			},
+		}
+		Expect(ipPool.Validate()).To(BeEmpty())
+	})
+	It("Valid - PerNodeExclusions max index", func() {
+		ipPool := v1alpha1.IPPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.IPPoolSpec{
+				Subnet:           "192.168.0.0/16",
+				PerNodeBlockSize: 128,
+				PerNodeExclusions: []v1alpha1.ExcludeIndexRange{
+					{StartIndex: 120, EndIndex: 127}, // 127 is max for block size 128
+				},
+			},
+		}
+		Expect(ipPool.Validate()).To(BeEmpty())
+	})
+	It("Invalid - PerNodeExclusions negative startIndex", func() {
+		ipPool := v1alpha1.IPPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.IPPoolSpec{
+				Subnet:           "192.168.0.0/16",
+				PerNodeBlockSize: 128,
+				PerNodeExclusions: []v1alpha1.ExcludeIndexRange{
+					{StartIndex: -5, EndIndex: 20},
+				},
+			},
+		}
+		Expect(ipPool.Validate().ToAggregate().Error()).
+			To(
+				ContainSubstring("spec.perNodeExclusions[0].startIndex"),
+			)
+	})
+	It("Invalid - PerNodeExclusions negative endIndex", func() {
+		ipPool := v1alpha1.IPPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.IPPoolSpec{
+				Subnet:           "192.168.0.0/16",
+				PerNodeBlockSize: 128,
+				PerNodeExclusions: []v1alpha1.ExcludeIndexRange{
+					{StartIndex: 5, EndIndex: -1},
+				},
+			},
+		}
+		Expect(ipPool.Validate().ToAggregate().Error()).
+			To(
+				ContainSubstring("spec.perNodeExclusions[0].endIndex"),
+			)
+	})
+	It("Invalid - PerNodeExclusions startIndex greater than endIndex", func() {
+		ipPool := v1alpha1.IPPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.IPPoolSpec{
+				Subnet:           "192.168.0.0/16",
+				PerNodeBlockSize: 128,
+				PerNodeExclusions: []v1alpha1.ExcludeIndexRange{
+					{StartIndex: 25, EndIndex: 24},
+				},
+			},
+		}
+		Expect(ipPool.Validate().ToAggregate().Error()).
+			To(
+				ContainSubstring("spec.perNodeExclusions[0]"),
+			)
+	})
+	It("Invalid - PerNodeExclusions startIndex outside block range", func() {
+		ipPool := v1alpha1.IPPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.IPPoolSpec{
+				Subnet:           "192.168.0.0/16",
+				PerNodeBlockSize: 128,
+				PerNodeExclusions: []v1alpha1.ExcludeIndexRange{
+					{StartIndex: 128, EndIndex: 130}, // max is 127 for block size 128
+				},
+			},
+		}
+		Expect(ipPool.Validate().ToAggregate().Error()).
+			To(And(
+				ContainSubstring("spec.perNodeExclusions[0].startIndex"),
+				ContainSubstring("outside"),
+			))
+	})
+	It("Invalid - PerNodeExclusions endIndex outside block range", func() {
+		ipPool := v1alpha1.IPPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.IPPoolSpec{
+				Subnet:           "192.168.0.0/16",
+				PerNodeBlockSize: 128,
+				PerNodeExclusions: []v1alpha1.ExcludeIndexRange{
+					{StartIndex: 120, EndIndex: 200},
+				},
+			},
+		}
+		Expect(ipPool.Validate().ToAggregate().Error()).
+			To(And(
+				ContainSubstring("spec.perNodeExclusions[0].endIndex"),
+				ContainSubstring("outside"),
+			))
+	})
+	It("Valid - PerNodeExclusions IPv6", func() {
+		ipPool := v1alpha1.IPPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.IPPoolSpec{
+				Subnet:           "2001:db8:3333:4444::0/64",
+				PerNodeBlockSize: 256,
+				PerNodeExclusions: []v1alpha1.ExcludeIndexRange{
+					{StartIndex: 0, EndIndex: 10},
+					{StartIndex: 250, EndIndex: 255},
+				},
+			},
+		}
+		Expect(ipPool.Validate()).To(BeEmpty())
+	})
+	It("PerNodeExclusions - IPv6 large subnet", func() {
+		cidrPool := v1alpha1.CIDRPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.CIDRPoolSpec{
+				CIDR:                 "fdf8:6aef:d1fe::/48",
+				PerNodeNetworkPrefix: 64,
+				PerNodeExclusions: []v1alpha1.ExcludeIndexRange{
+					{StartIndex: 0, EndIndex: 10},
+					{StartIndex: 250, EndIndex: 255},
+				},
+			},
+		}
+		validatePoolAndCheckErr(&cidrPool, true)
+	})
+	It("Invalid - PerNodeExclusions IPv6 outside range", func() {
+		ipPool := v1alpha1.IPPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.IPPoolSpec{
+				Subnet:           "2001:db8:3333:4444::0/64",
+				PerNodeBlockSize: 256,
+				PerNodeExclusions: []v1alpha1.ExcludeIndexRange{
+					{StartIndex: 0, EndIndex: 300}, // max is 255 for block size 256
+				},
+			},
+		}
+		Expect(ipPool.Validate().ToAggregate().Error()).
+			To(
+				ContainSubstring("spec.perNodeExclusions[0].endIndex"),
 			)
 	})
 })
