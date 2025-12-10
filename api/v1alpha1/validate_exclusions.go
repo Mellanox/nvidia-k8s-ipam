@@ -15,6 +15,8 @@ package v1alpha1
 
 import (
 	"fmt"
+	"math"
+	"math/big"
 	"net"
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -53,6 +55,104 @@ func validateExclusions(subnet *net.IPNet, exclusions []ExcludeRange, fldPath *f
 			allErrs = append(allErrs, field.Invalid(
 				fldPath.Child("exclusions").Index(i), e,
 				"endIP should be equal or greater than startIP"))
+		}
+	}
+	return allErrs
+}
+
+// validatePerNodeExclusions validate per-node index exclusions for CIDRPool:
+// - startIndex and endIndex should be non-negative
+// - endIndex should be equal or greater than startIndex
+// - indices should be within the valid range for the per-node subnet
+// there is no need to validate that ranges have no overlaps
+func validatePerNodeExclusions(
+	subnet *net.IPNet, perNodeNetworkPrefix int32,
+	exclusions []ExcludeIndexRange, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+	// Calculate the maximum valid index for the per-node subnet
+	// For a /prefix network, we have 2^(address_bits - prefix) IPs
+	_, bitsTotal := subnet.Mask.Size()
+	hostBits := bitsTotal - int(perNodeNetworkPrefix)
+
+	// Use big.Int to calculate max index safely (avoids overflow)
+	// then clamp to int32 range
+	ipCount := big.NewInt(0).Exp(big.NewInt(2), big.NewInt(int64(hostBits)), nil)
+	maxIndexBig := big.NewInt(0).Sub(ipCount, big.NewInt(1))
+	maxIndex := int32(math.MaxInt32)
+	if maxIndexBig.IsInt64() && maxIndexBig.Int64() < int64(math.MaxInt32) {
+		maxIndex = int32(maxIndexBig.Int64()) //nolint:gosec // checked above
+	}
+
+	for i, e := range exclusions {
+		if e.StartIndex < 0 {
+			allErrs = append(allErrs, field.Invalid(
+				fldPath.Child("perNodeExclusions").Index(i).Child("startIndex"), e.StartIndex,
+				"must be non-negative"))
+		}
+		if e.EndIndex < 0 {
+			allErrs = append(allErrs, field.Invalid(
+				fldPath.Child("perNodeExclusions").Index(i).Child("endIndex"), e.EndIndex,
+				"must be non-negative"))
+		}
+		if e.EndIndex < e.StartIndex {
+			allErrs = append(allErrs, field.Invalid(
+				fldPath.Child("perNodeExclusions").Index(i), e,
+				"endIndex must be greater than or equal to startIndex"))
+		}
+		if e.StartIndex > maxIndex {
+			allErrs = append(allErrs, field.Invalid(
+				fldPath.Child("perNodeExclusions").Index(i).Child("startIndex"), e.StartIndex,
+				fmt.Sprintf("index is outside of the per-node subnet range (max: %d)", maxIndex)))
+		}
+		if e.EndIndex > maxIndex {
+			allErrs = append(allErrs, field.Invalid(
+				fldPath.Child("perNodeExclusions").Index(i).Child("endIndex"), e.EndIndex,
+				fmt.Sprintf("index is outside of the per-node subnet range (max: %d)", maxIndex)))
+		}
+	}
+	return allErrs
+}
+
+// validatePerNodeExclusionsForBlockSize validate per-node index exclusions for IPPool:
+// - startIndex and endIndex should be non-negative
+// - endIndex should be equal or greater than startIndex
+// - indices should be within the valid range based on perNodeBlockSize
+// there is no need to validate that ranges have no overlaps
+func validatePerNodeExclusionsForBlockSize(
+	perNodeBlockSize int, exclusions []ExcludeIndexRange, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+	// For IPPool, the max index is perNodeBlockSize - 1
+	// Clamp to int32 max to match API type
+	maxIndex := int32(perNodeBlockSize - 1) //nolint:gosec // clamped below
+	if perNodeBlockSize-1 > math.MaxInt32 {
+		maxIndex = math.MaxInt32
+	}
+
+	for i, e := range exclusions {
+		if e.StartIndex < 0 {
+			allErrs = append(allErrs, field.Invalid(
+				fldPath.Child("perNodeExclusions").Index(i).Child("startIndex"), e.StartIndex,
+				"must be non-negative"))
+		}
+		if e.EndIndex < 0 {
+			allErrs = append(allErrs, field.Invalid(
+				fldPath.Child("perNodeExclusions").Index(i).Child("endIndex"), e.EndIndex,
+				"must be non-negative"))
+		}
+		if e.EndIndex < e.StartIndex {
+			allErrs = append(allErrs, field.Invalid(
+				fldPath.Child("perNodeExclusions").Index(i), e,
+				"endIndex must be greater than or equal to startIndex"))
+		}
+		if e.StartIndex > maxIndex {
+			allErrs = append(allErrs, field.Invalid(
+				fldPath.Child("perNodeExclusions").Index(i).Child("startIndex"), e.StartIndex,
+				fmt.Sprintf("index is outside of the per-node block range (max: %d)", maxIndex)))
+		}
+		if e.EndIndex > maxIndex {
+			allErrs = append(allErrs, field.Invalid(
+				fldPath.Child("perNodeExclusions").Index(i).Child("endIndex"), e.EndIndex,
+				fmt.Sprintf("index is outside of the per-node block range (max: %d)", maxIndex)))
 		}
 	}
 	return allErrs

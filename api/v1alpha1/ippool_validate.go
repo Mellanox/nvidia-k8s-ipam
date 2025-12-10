@@ -52,6 +52,10 @@ func (r *IPPool) Validate() field.ErrorList {
 	if network != nil {
 		errList = append(errList, validateExclusions(network, r.Spec.Exclusions, field.NewPath("spec"))...)
 	}
+	if r.Spec.PerNodeBlockSize >= 1 {
+		errList = append(errList, validatePerNodeExclusionsForBlockSize(
+			r.Spec.PerNodeBlockSize, r.Spec.PerNodeExclusions, field.NewPath("spec"))...)
+	}
 	var parsedGW net.IP
 	if r.Spec.Gateway != "" {
 		parsedGW = net.ParseIP(r.Spec.Gateway)

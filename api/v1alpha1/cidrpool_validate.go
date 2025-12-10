@@ -88,6 +88,8 @@ func (r *CIDRPool) validateCIDR() field.ErrorList {
 			r.Spec.GatewayIndex, "gateway index is outside of the node prefix"))
 	}
 	errList = append(errList, validateExclusions(network, r.Spec.Exclusions, field.NewPath("spec"))...)
+	errList = append(errList, validatePerNodeExclusions(
+		network, r.Spec.PerNodeNetworkPrefix, r.Spec.PerNodeExclusions, field.NewPath("spec"))...)
 	errList = append(errList, r.validateStaticAllocations(network)...)
 	return errList
 }

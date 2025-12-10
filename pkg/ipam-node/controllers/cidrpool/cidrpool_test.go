@@ -44,6 +44,81 @@ const (
 )
 
 var _ = Describe("CIDRPool", func() {
+	DescribeTable("buildPerNodeExclusions",
+		func(exclusions []ipamv1alpha1.ExcludeIndexRange, firstIP string, lastIP string, result []pool.ExclusionRange) {
+			first := net.ParseIP(firstIP)
+			last := net.ParseIP(lastIP)
+			Expect(buildPerNodeExclusions(exclusions, first, last)).To(Equal(result))
+		},
+		Entry("empty exclusions",
+			[]ipamv1alpha1.ExcludeIndexRange{},
+			"192.168.0.0", "192.168.0.254",
+			nil,
+		),
+		Entry("single range - from subnet start",
+			[]ipamv1alpha1.ExcludeIndexRange{
+				{StartIndex: 0, EndIndex: 10},
+			},
+			"192.168.0.0", "192.168.0.254",
+			[]pool.ExclusionRange{
+				{StartIP: "192.168.0.0", EndIP: "192.168.0.10"},
+			},
+		),
+		Entry("exclude first IP after network address",
+			[]ipamv1alpha1.ExcludeIndexRange{
+				{StartIndex: 1, EndIndex: 1},
+			},
+			"192.168.0.0", "192.168.0.254",
+			[]pool.ExclusionRange{
+				{StartIP: "192.168.0.1", EndIP: "192.168.0.1"},
+			},
+		),
+		Entry("multiple ranges",
+			[]ipamv1alpha1.ExcludeIndexRange{
+				{StartIndex: 0, EndIndex: 10},
+				{StartIndex: 200, EndIndex: 210},
+			},
+			"192.168.0.0", "192.168.0.254",
+			[]pool.ExclusionRange{
+				{StartIP: "192.168.0.0", EndIP: "192.168.0.10"},
+				{StartIP: "192.168.0.200", EndIP: "192.168.0.210"},
+			},
+		),
+		Entry("range exceeds allocation - should be clamped",
+			[]ipamv1alpha1.ExcludeIndexRange{
+				{StartIndex: 250, EndIndex: 300},
+			},
+			"192.168.0.0", "192.168.0.254",
+			[]pool.ExclusionRange{
+				{StartIP: "192.168.0.250", EndIP: "192.168.0.254"},
+			},
+		),
+		Entry("range completely outside allocation - should be skipped",
+			[]ipamv1alpha1.ExcludeIndexRange{
+				{StartIndex: 300, EndIndex: 400},
+			},
+			"192.168.0.0", "192.168.0.254",
+			[]pool.ExclusionRange{},
+		),
+		Entry("IPv6 - single range from subnet start",
+			[]ipamv1alpha1.ExcludeIndexRange{
+				{StartIndex: 0, EndIndex: 5},
+			},
+			"2001:db8::", "2001:db8::ff",
+			[]pool.ExclusionRange{
+				{StartIP: "2001:db8::", EndIP: "2001:db8::5"},
+			},
+		),
+		Entry("consistent with gatewayIndex: index 1 = first IP",
+			[]ipamv1alpha1.ExcludeIndexRange{
+				{StartIndex: 1, EndIndex: 11},
+			},
+			"192.168.0.0", "192.168.0.254",
+			[]pool.ExclusionRange{
+				{StartIP: "192.168.0.1", EndIP: "192.168.0.11"},
+			},
+		),
+	)
 	DescribeTable("buildExclusions",
 		func(exclusions []ipamv1alpha1.ExcludeRange, nodeSubnet string, firstIP string, lastIP string, result []pool.ExclusionRange) {
 			_, subnet, _ := net.ParseCIDR(nodeSubnet)
