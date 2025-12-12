@@ -44,6 +44,8 @@ type CIDRPoolSpec struct {
 	PerNodeNetworkPrefix int32 `json:"perNodeNetworkPrefix"`
 	// contains reserved IP addresses that should not be allocated by nv-ipam
 	Exclusions []ExcludeRange `json:"exclusions,omitempty"`
+	// contains reserved indexes of IPs that should not be allocated by nv-ipam
+	PerNodeExclusions []ExcludeIndexRange `json:"perNodeExclusions,omitempty"`
 	// static allocations for the pool
 	StaticAllocations []CIDRPoolStaticAllocation `json:"staticAllocations,omitempty"`
 	// selector for nodes, if empty match all nodes

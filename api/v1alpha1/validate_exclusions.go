@@ -57,3 +57,103 @@ func validateExclusions(subnet *net.IPNet, exclusions []ExcludeRange, fldPath *f
 	}
 	return allErrs
 }
+
+// validatePerNodeExclusions validate per-node index exclusions for CIDRPool:
+// - startIndex and endIndex should be non-negative
+// - endIndex should be equal or greater than startIndex
+// - indices should be within the valid range for the per-node subnet
+// there is no need to validate that ranges have no overlaps
+func validatePerNodeExclusions(
+	subnet *net.IPNet, perNodeNetworkPrefix int32,
+	exclusions []ExcludeIndexRange, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+	// Calculate the maximum valid index for the per-node subnet
+	// For a /prefix network, we have 2^(address_bits - prefix) IPs
+	_, bitsTotal := subnet.Mask.Size()
+	hostBits := bitsTotal - int(perNodeNetworkPrefix)
+
+	// For very large subnets (e.g., IPv6 /64), skip range validation
+	// to avoid integer overflow. Indexes beyond practical limits will
+	// fail at runtime when converting to IPs anyway.
+	var maxIndex int
+	checkRange := true
+	if hostBits >= 63 {
+		// Too large to represent in int, skip range check
+		checkRange = false
+	} else {
+		maxIndex = (1 << hostBits) - 1
+	}
+
+	for i, e := range exclusions {
+		if e.StartIndex < 0 {
+			allErrs = append(allErrs, field.Invalid(
+				fldPath.Child("perNodeExclusions").Index(i).Child("startIndex"), e.StartIndex,
+				"must be non-negative"))
+		}
+		if e.EndIndex < 0 {
+			allErrs = append(allErrs, field.Invalid(
+				fldPath.Child("perNodeExclusions").Index(i).Child("endIndex"), e.EndIndex,
+				"must be non-negative"))
+		}
+		if e.EndIndex < e.StartIndex {
+			allErrs = append(allErrs, field.Invalid(
+				fldPath.Child("perNodeExclusions").Index(i), e,
+				"endIndex must be greater than or equal to startIndex"))
+		}
+		// Only check range for subnets small enough to avoid overflow
+		if checkRange {
+			if e.StartIndex > maxIndex {
+				allErrs = append(allErrs, field.Invalid(
+					fldPath.Child("perNodeExclusions").Index(i).Child("startIndex"), e.StartIndex,
+					fmt.Sprintf("index is outside of the per-node subnet range (max: %d)", maxIndex)))
+			}
+			if e.EndIndex > maxIndex {
+				allErrs = append(allErrs, field.Invalid(
+					fldPath.Child("perNodeExclusions").Index(i).Child("endIndex"), e.EndIndex,
+					fmt.Sprintf("index is outside of the per-node subnet range (max: %d)", maxIndex)))
+			}
+		}
+	}
+	return allErrs
+}
+
+// validatePerNodeExclusionsForBlockSize validate per-node index exclusions for IPPool:
+// - startIndex and endIndex should be non-negative
+// - endIndex should be equal or greater than startIndex
+// - indices should be within the valid range based on perNodeBlockSize
+// there is no need to validate that ranges have no overlaps
+func validatePerNodeExclusionsForBlockSize(
+	perNodeBlockSize int, exclusions []ExcludeIndexRange, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+	// For IPPool, the max index is perNodeBlockSize - 1
+	maxIndex := perNodeBlockSize - 1
+
+	for i, e := range exclusions {
+		if e.StartIndex < 0 {
+			allErrs = append(allErrs, field.Invalid(
+				fldPath.Child("perNodeExclusions").Index(i).Child("startIndex"), e.StartIndex,
+				"must be non-negative"))
+		}
+		if e.EndIndex < 0 {
+			allErrs = append(allErrs, field.Invalid(
+				fldPath.Child("perNodeExclusions").Index(i).Child("endIndex"), e.EndIndex,
+				"must be non-negative"))
+		}
+		if e.EndIndex < e.StartIndex {
+			allErrs = append(allErrs, field.Invalid(
+				fldPath.Child("perNodeExclusions").Index(i), e,
+				"endIndex must be greater than or equal to startIndex"))
+		}
+		if e.StartIndex > maxIndex {
+			allErrs = append(allErrs, field.Invalid(
+				fldPath.Child("perNodeExclusions").Index(i).Child("startIndex"), e.StartIndex,
+				fmt.Sprintf("index is outside of the per-node block range (max: %d)", maxIndex)))
+		}
+		if e.EndIndex > maxIndex {
+			allErrs = append(allErrs, field.Invalid(
+				fldPath.Child("perNodeExclusions").Index(i).Child("endIndex"), e.EndIndex,
+				fmt.Sprintf("index is outside of the per-node block range (max: %d)", maxIndex)))
+		}
+	}
+	return allErrs
+}

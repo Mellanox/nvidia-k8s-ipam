@@ -284,6 +284,88 @@ var _ = Describe("CIDRPool", func() {
 			{StartIP: "10.10.33.25", EndIP: "10.10.33.33"},
 		}, false, ContainSubstring("spec.exclusions[0]")),
 	)
+	DescribeTable("PerNodeExclusions",
+		func(perNodeExclusions []v1alpha1.ExcludeIndexRange, isValid bool, errMatcher ...gomegaTypes.GomegaMatcher) {
+			cidrPool := v1alpha1.CIDRPool{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: v1alpha1.CIDRPoolSpec{
+					CIDR:                 "192.168.0.0/16",
+					PerNodeNetworkPrefix: 24,
+					PerNodeExclusions:    perNodeExclusions,
+				},
+			}
+			validatePoolAndCheckErr(&cidrPool, isValid, errMatcher...)
+		},
+		Entry("valid - range", []v1alpha1.ExcludeIndexRange{
+			{StartIndex: 10, EndIndex: 20},
+		}, true),
+		Entry("valid - single index", []v1alpha1.ExcludeIndexRange{
+			{StartIndex: 5, EndIndex: 5},
+		}, true),
+		Entry("valid - index 0", []v1alpha1.ExcludeIndexRange{
+			{StartIndex: 0, EndIndex: 10},
+		}, true),
+		Entry("valid - max index for /24 (255)", []v1alpha1.ExcludeIndexRange{
+			{StartIndex: 250, EndIndex: 255},
+		}, true),
+		Entry("valid - multiple ranges", []v1alpha1.ExcludeIndexRange{
+			{StartIndex: 0, EndIndex: 10},
+			{StartIndex: 100, EndIndex: 110},
+		}, true),
+		Entry("negative startIndex", []v1alpha1.ExcludeIndexRange{
+			{StartIndex: -5, EndIndex: 20},
+		}, false, ContainSubstring("spec.perNodeExclusions[0].startIndex")),
+		Entry("negative endIndex", []v1alpha1.ExcludeIndexRange{
+			{StartIndex: 5, EndIndex: -1},
+		}, false, ContainSubstring("spec.perNodeExclusions[0].endIndex")),
+		Entry("startIndex greater than endIndex", []v1alpha1.ExcludeIndexRange{
+			{StartIndex: 25, EndIndex: 24},
+		}, false, ContainSubstring("spec.perNodeExclusions[0]")),
+		Entry("startIndex outside subnet range", []v1alpha1.ExcludeIndexRange{
+			{StartIndex: 256, EndIndex: 260},
+		}, false, ContainSubstring("spec.perNodeExclusions[0].startIndex"), ContainSubstring("outside")),
+		Entry("endIndex outside subnet range", []v1alpha1.ExcludeIndexRange{
+			{StartIndex: 250, EndIndex: 300},
+		}, false, ContainSubstring("spec.perNodeExclusions[0].endIndex"), ContainSubstring("outside")),
+		Entry("multiple errors in one entry", []v1alpha1.ExcludeIndexRange{
+			{StartIndex: -5, EndIndex: -1},
+		}, false,
+			ContainSubstring("spec.perNodeExclusions[0].startIndex"),
+			ContainSubstring("spec.perNodeExclusions[0].endIndex")),
+		Entry("multiple entries with errors", []v1alpha1.ExcludeIndexRange{
+			{StartIndex: -5, EndIndex: 20},
+			{StartIndex: 300, EndIndex: 400},
+		}, false,
+			ContainSubstring("spec.perNodeExclusions[0]"),
+			ContainSubstring("spec.perNodeExclusions[1]")),
+	)
+	It("PerNodeExclusions - IPv6", func() {
+		cidrPool := v1alpha1.CIDRPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.CIDRPoolSpec{
+				CIDR:                 "fdf8:6aef:d1fe::/48",
+				PerNodeNetworkPrefix: 120, // 2^8 = 256 addresses
+				PerNodeExclusions: []v1alpha1.ExcludeIndexRange{
+					{StartIndex: 0, EndIndex: 10},
+					{StartIndex: 250, EndIndex: 255},
+				},
+			},
+		}
+		validatePoolAndCheckErr(&cidrPool, true)
+	})
+	It("PerNodeExclusions - IPv6 invalid", func() {
+		cidrPool := v1alpha1.CIDRPool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: v1alpha1.CIDRPoolSpec{
+				CIDR:                 "fdf8:6aef:d1fe::/48",
+				PerNodeNetworkPrefix: 120,
+				PerNodeExclusions: []v1alpha1.ExcludeIndexRange{
+					{StartIndex: 0, EndIndex: 300}, // 300 > 255
+				},
+			},
+		}
+		validatePoolAndCheckErr(&cidrPool, false, ContainSubstring("spec.perNodeExclusions[0].endIndex"))
+	})
 	DescribeTable("StaticAllocations",
 		func(staticAllocations []v1alpha1.CIDRPoolStaticAllocation, isValid bool, errMatcher ...gomegaTypes.GomegaMatcher) {
 			cidrPool := v1alpha1.CIDRPool{
