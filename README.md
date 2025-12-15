@@ -345,6 +345,9 @@ spec:
   exclusions: # optional
   - startIP: 192.168.0.10
     endIP: 192.168.0.20
+  perNodeExclusions: # optional
+  - startIndex: 0
+    endIndex: 10
   nodeSelector:
     nodeSelectorTerms:
     - matchExpressions:
@@ -385,6 +388,11 @@ spec:
     * `startIP`: start IP of the exclude range (inclusive).
     * `endIP`: end IP of the exclude range (inclusive).
 
+  * `perNodeExclusions` (optional, list): contains reserved IP address indexes that should not be allocated by nv-ipam node component. The IP address indexes are relative to the per-node IP block allocated to each node, counting from the start of the allocated range. For example, if a node is allocated the IP block 192.168.0.1-192.168.0.100, then index 0 corresponds to 192.168.0.1, index 1 to 192.168.0.2, and so on. Note: For IPPool, indexes count from the range start; for CIDRPool, indexes count from the subnet start (network address).
+
+    * `startIndex`: start index of the exclude range (inclusive). Must be non-negative.
+    * `endIndex`: end index of the exclude range (inclusive). Must be greater than or equal to startIndex and within the perNodeBlockSize range.
+
   * `nodeSelector` (optional): A list of node selector terms. The terms are ORed. Each term can have a list of matchExpressions that are ANDed. Only the nodes that match the provided labels will get assigned IP Blocks for the defined pool.
   * `defaultGateway` (optional): Add the pool gateway as default gateway in the pod static routes.
   * `routes` (optional, list): contains CIDR to be added in the pod static routes via the pool gateway.
@@ -419,6 +427,9 @@ spec:
   exclusions: # optional
     - startIP: 192.168.0.10
       endIP: 192.168.0.20
+  perNodeExclusions: # optional
+    - startIndex: 0
+      endIndex: 10
   staticAllocations:
     - nodeName: node-33
       prefix: 192.168.33.0/24
@@ -477,6 +488,11 @@ spec:
 
       * `startIP`: start IP of the exclude range (inclusive).
       * `endIP`:  end IP of the exclude range (inclusive).
+
+  * `perNodeExclusions` (optional, list): contains reserved IP address indexes that should not be allocated by nv-ipam node component. The IP address indexes are relative to the per-node prefix allocated to each node, counting from the subnet start (network address). For example, if a node is allocated the prefix 192.168.0.0/24, then index 0 corresponds to 192.168.0.0 (network address), index 1 to 192.168.0.1 (which would be the gateway if gatewayIndex is 1), index 2 to 192.168.0.2, and so on. This indexing is consistent with gatewayIndex.
+
+      * `startIndex`: start index of the exclude range (inclusive). Must be non-negative.
+      * `endIndex`: end index of the exclude range (inclusive). Must be greater than or equal to startIndex and within the subnet size defined by perNodeNetworkPrefix.
 
   * `staticAllocations` (optional, list): static allocations for the pool.
 

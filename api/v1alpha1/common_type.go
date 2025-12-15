@@ -20,6 +20,19 @@ type ExcludeRange struct {
 	EndIP   string `json:"endIP"`
 }
 
+// ExcludeIndexRange contains range of indexes of IPs to exclude from allocation
+// startIndex and endIndex are part of the ExcludeIndexRange
+//
+// +kubebuilder:validation:XValidation:rule="self.endIndex >= self.startIndex",message="endIndex must be greater than or equal to startIndex"
+//
+//nolint:lll // kubebuilder annotation exceeds line length
+type ExcludeIndexRange struct {
+	// +kubebuilder:validation:Minimum=0
+	StartIndex int32 `json:"startIndex"`
+	// +kubebuilder:validation:Minimum=0
+	EndIndex int32 `json:"endIndex"`
+}
+
 // Route contains static route parameters
 type Route struct {
 	// The destination of the route, in CIDR notation

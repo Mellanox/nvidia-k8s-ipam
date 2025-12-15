@@ -182,6 +182,30 @@ spec:
                   amount of IPs to allocate for each node,
                   must be less than amount of available IPs in the subnet
                 type: integer
+              perNodeExclusions:
+                description: contains reserved indexes of IPs that should not be allocated
+                  by nv-ipam
+                items:
+                  description: |-
+                    ExcludeIndexRange contains range of indexes of IPs to exclude from allocation
+                    startIndex and endIndex are part of the ExcludeIndexRange
+                  properties:
+                    endIndex:
+                      format: int32
+                      minimum: 0
+                      type: integer
+                    startIndex:
+                      format: int32
+                      minimum: 0
+                      type: integer
+                  required:
+                  - endIndex
+                  - startIndex
+                  type: object
+                  x-kubernetes-validations:
+                  - message: endIndex must be greater than or equal to startIndex
+                    rule: self.endIndex >= self.startIndex
+                type: array
               routes:
                 description: static routes list using the gateway specified in the
                   spec.
