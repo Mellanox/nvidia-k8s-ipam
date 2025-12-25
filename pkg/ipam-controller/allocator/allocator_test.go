@@ -16,6 +16,7 @@ package allocator_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -24,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	ipamv1alpha1 "github.com/Mellanox/nvidia-k8s-ipam/api/v1alpha1"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ip"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-controller/allocator"
 )
 
@@ -340,7 +342,7 @@ var _ = Describe("Allocator", func() {
 			Expect(node2Alloc.StartIP.String()).To(BeEquivalentTo("10.10.10.11"))
 			Expect(node2Alloc.EndIP.String()).To(BeEquivalentTo("10.10.10.11"))
 		})
-		It("/31 pool - load allocations", func ()  {
+		It("/31 pool - load allocations", func() {
 			pool := &ipamv1alpha1.IPPool{
 				ObjectMeta: v1.ObjectMeta{Name: "small-pool"},
 				Spec: ipamv1alpha1.IPPoolSpec{
@@ -485,5 +487,425 @@ var _ = Describe("Allocator", func() {
 				Expect(node1AllocFromAllocator).NotTo(BeEquivalentTo(test.in))
 			}
 		}
+	})
+
+	Context("Allocate with exclusions", func() {
+		It("partial exclusion within range - range is not excluded", func() {
+			pool := &ipamv1alpha1.IPPool{
+				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "192.168.0.0/24",
+					PerNodeBlockSize: 10,
+					Gateway:          "192.168.0.1",
+					Exclusions: []ipamv1alpha1.ExcludeRange{
+						{StartIP: "192.168.0.3", EndIP: "192.168.0.5"},
+					},
+				},
+			}
+			a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool, sets.New(testNodeName1))
+			node1Alloc, err := a.AllocateFromPool(ctx, testNodeName1)
+			Expect(err).ToNot(HaveOccurred())
+			// First range should still be allocated (partial exclusion doesn't skip the range)
+			Expect(node1Alloc.StartIP.String()).To(Equal("192.168.0.1"))
+			Expect(node1Alloc.EndIP.String()).To(Equal("192.168.0.10"))
+		})
+
+		It("single exclusion covering entire first range - skips to next range", func() {
+			pool := &ipamv1alpha1.IPPool{
+				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "192.168.0.0/24",
+					PerNodeBlockSize: 10,
+					Gateway:          "192.168.0.1",
+					Exclusions: []ipamv1alpha1.ExcludeRange{
+						{StartIP: "192.168.0.1", EndIP: "192.168.0.10"},
+					},
+				},
+			}
+			a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool, sets.New(testNodeName1))
+			node1Alloc, err := a.AllocateFromPool(ctx, testNodeName1)
+			Expect(err).ToNot(HaveOccurred())
+			// Should skip the first range and allocate from the second
+			Expect(node1Alloc.StartIP.String()).To(Equal("192.168.0.11"))
+			Expect(node1Alloc.EndIP.String()).To(Equal("192.168.0.20"))
+		})
+
+		It("exclusion larger than range - skips the range", func() {
+			pool := &ipamv1alpha1.IPPool{
+				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "192.168.0.0/24",
+					PerNodeBlockSize: 10,
+					Gateway:          "192.168.0.1",
+					Exclusions: []ipamv1alpha1.ExcludeRange{
+						{StartIP: "192.168.0.0", EndIP: "192.168.0.15"},
+					},
+				},
+			}
+			a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool, sets.New(testNodeName1))
+			node1Alloc, err := a.AllocateFromPool(ctx, testNodeName1)
+			Expect(err).ToNot(HaveOccurred())
+			// Should skip the first range and allocate from the second
+			Expect(node1Alloc.StartIP.String()).To(Equal("192.168.0.11"))
+			Expect(node1Alloc.EndIP.String()).To(Equal("192.168.0.20"))
+		})
+
+		It("multiple exclusions that merge to cover entire range - skips the range", func() {
+			pool := &ipamv1alpha1.IPPool{
+				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "192.168.0.0/24",
+					PerNodeBlockSize: 10,
+					Gateway:          "192.168.0.1",
+					Exclusions: []ipamv1alpha1.ExcludeRange{
+						{StartIP: "192.168.0.1", EndIP: "192.168.0.5"},
+						{StartIP: "192.168.0.4", EndIP: "192.168.0.10"},
+					},
+				},
+			}
+			a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool, sets.New(testNodeName1))
+			node1Alloc, err := a.AllocateFromPool(ctx, testNodeName1)
+			Expect(err).ToNot(HaveOccurred())
+			// Should skip the first range and allocate from the second
+			Expect(node1Alloc.StartIP.String()).To(Equal("192.168.0.11"))
+			Expect(node1Alloc.EndIP.String()).To(Equal("192.168.0.20"))
+		})
+
+		It("multiple non-adjacent exclusions not covering entire range - range is not excluded", func() {
+			pool := &ipamv1alpha1.IPPool{
+				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "192.168.0.0/24",
+					PerNodeBlockSize: 10,
+					Gateway:          "192.168.0.1",
+					Exclusions: []ipamv1alpha1.ExcludeRange{
+						{StartIP: "192.168.0.1", EndIP: "192.168.0.3"},
+						{StartIP: "192.168.0.5", EndIP: "192.168.0.10"},
+					},
+				},
+			}
+			a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool, sets.New(testNodeName1))
+			node1Alloc, err := a.AllocateFromPool(ctx, testNodeName1)
+			Expect(err).ToNot(HaveOccurred())
+			// First range still allocated (there's a gap in exclusions)
+			Expect(node1Alloc.StartIP.String()).To(Equal("192.168.0.1"))
+			Expect(node1Alloc.EndIP.String()).To(Equal("192.168.0.10"))
+		})
+
+		It("exclusion outside of range - range is not excluded", func() {
+			pool := &ipamv1alpha1.IPPool{
+				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "192.168.0.0/24",
+					PerNodeBlockSize: 10,
+					Gateway:          "192.168.0.1",
+					Exclusions: []ipamv1alpha1.ExcludeRange{
+						{StartIP: "192.168.0.100", EndIP: "192.168.0.110"},
+					},
+				},
+			}
+			a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool, sets.New(testNodeName1))
+			node1Alloc, err := a.AllocateFromPool(ctx, testNodeName1)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(node1Alloc.StartIP.String()).To(Equal("192.168.0.1"))
+			Expect(node1Alloc.EndIP.String()).To(Equal("192.168.0.10"))
+		})
+
+		It("per-node exclusion covering entire range - no free ranges", func() {
+			pool := &ipamv1alpha1.IPPool{
+				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "192.168.0.0/24",
+					PerNodeBlockSize: 10,
+					Gateway:          "192.168.0.1",
+					PerNodeExclusions: []ipamv1alpha1.ExcludeIndexRange{
+						{StartIndex: 0, EndIndex: 9},
+					},
+				},
+			}
+			a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool, sets.New(testNodeName1))
+			_, err := a.AllocateFromPool(ctx, testNodeName1)
+			Expect(err).To(MatchError(allocator.ErrNoFreeRanges))
+		})
+
+		It("per-node exclusion partial - range is not excluded", func() {
+			pool := &ipamv1alpha1.IPPool{
+				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "192.168.0.0/24",
+					PerNodeBlockSize: 10,
+					Gateway:          "192.168.0.1",
+					PerNodeExclusions: []ipamv1alpha1.ExcludeIndexRange{
+						{StartIndex: 0, EndIndex: 8},
+					},
+				},
+			}
+			a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool, sets.New(testNodeName1))
+			node1Alloc, err := a.AllocateFromPool(ctx, testNodeName1)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(node1Alloc.StartIP.String()).To(Equal("192.168.0.1"))
+			Expect(node1Alloc.EndIP.String()).To(Equal("192.168.0.10"))
+		})
+
+		It("mix of pool-level and per-node exclusions covering entire range - skips the range", func() {
+			pool := &ipamv1alpha1.IPPool{
+				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "192.168.0.0/24",
+					PerNodeBlockSize: 10,
+					Gateway:          "192.168.0.1",
+					Exclusions: []ipamv1alpha1.ExcludeRange{
+						{StartIP: "192.168.0.1", EndIP: "192.168.0.5"},
+					},
+					PerNodeExclusions: []ipamv1alpha1.ExcludeIndexRange{
+						{StartIndex: 5, EndIndex: 9}, // excludes 192.168.0.6 - 192.168.0.10 for the first block
+					},
+				},
+			}
+			a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool, sets.New(testNodeName1))
+			node1Alloc, err := a.AllocateFromPool(ctx, testNodeName1)
+			Expect(err).ToNot(HaveOccurred())
+			// Should skip the first range
+			Expect(node1Alloc.StartIP.String()).To(Equal("192.168.0.11"))
+			Expect(node1Alloc.EndIP.String()).To(Equal("192.168.0.20"))
+		})
+
+		It("mix of pool-level and per-node exclusions not covering entire range - range is not excluded", func() {
+			pool := &ipamv1alpha1.IPPool{
+				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "192.168.0.0/24",
+					PerNodeBlockSize: 10,
+					Gateway:          "192.168.0.1",
+					Exclusions: []ipamv1alpha1.ExcludeRange{
+						{StartIP: "192.168.0.1", EndIP: "192.168.0.3"},
+					},
+					PerNodeExclusions: []ipamv1alpha1.ExcludeIndexRange{
+						{StartIndex: 4, EndIndex: 9}, // 192.168.0.5 - 192.168.0.10
+					},
+				},
+			}
+			a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool, sets.New(testNodeName1))
+			node1Alloc, err := a.AllocateFromPool(ctx, testNodeName1)
+			Expect(err).ToNot(HaveOccurred())
+			// First range allocated (there's a gap)
+			Expect(node1Alloc.StartIP.String()).To(Equal("192.168.0.1"))
+			Expect(node1Alloc.EndIP.String()).To(Equal("192.168.0.10"))
+		})
+
+		It("multiple consecutive ranges excluded - skips all excluded ranges", func() {
+			pool := &ipamv1alpha1.IPPool{
+				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "192.168.0.0/24",
+					PerNodeBlockSize: 10,
+					Gateway:          "192.168.0.1",
+					Exclusions: []ipamv1alpha1.ExcludeRange{
+						{StartIP: "192.168.0.1", EndIP: "192.168.0.30"}, // Covers first 3 ranges
+					},
+				},
+			}
+			a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool, sets.New(testNodeName1))
+			node1Alloc, err := a.AllocateFromPool(ctx, testNodeName1)
+			Expect(err).ToNot(HaveOccurred())
+			// Should skip to the fourth range
+			Expect(node1Alloc.StartIP.String()).To(Equal("192.168.0.31"))
+			Expect(node1Alloc.EndIP.String()).To(Equal("192.168.0.40"))
+		})
+
+		It("all ranges excluded - returns no free ranges error", func() {
+			pool := &ipamv1alpha1.IPPool{
+				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "192.168.0.0/16",
+					PerNodeBlockSize: 10,
+					Gateway:          "192.168.0.1",
+					Exclusions: []ipamv1alpha1.ExcludeRange{
+						{StartIP: "192.168.0.0", EndIP: "192.168.255.255"},
+					},
+				},
+			}
+			a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool, sets.New(testNodeName1))
+			_, err := a.AllocateFromPool(ctx, testNodeName1)
+			Expect(err).To(MatchError(allocator.ErrNoFreeRanges))
+		})
+
+		It("multiple allocations with exclusions - skips the excluded range and allocates after it", func() {
+			pool := &ipamv1alpha1.IPPool{
+				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "192.168.0.0/24",
+					PerNodeBlockSize: 10,
+					Gateway:          "192.168.0.1",
+					Exclusions: []ipamv1alpha1.ExcludeRange{
+						{StartIP: "192.168.0.11", EndIP: "192.168.0.20"},
+					},
+				},
+			}
+			a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool, sets.New(testNodeName1))
+			node1Alloc, err := a.AllocateFromPool(ctx, testNodeName1)
+			Expect(err).ToNot(HaveOccurred())
+			node2Alloc, err := a.AllocateFromPool(ctx, testNodeName2)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(node1Alloc.StartIP.String()).To(Equal("192.168.0.1"))
+			Expect(node1Alloc.EndIP.String()).To(Equal("192.168.0.10"))
+			Expect(node2Alloc.StartIP.String()).To(Equal("192.168.0.21"))
+			Expect(node2Alloc.EndIP.String()).To(Equal("192.168.0.30"))
+		})
+
+		// IPv6 tests
+		It("ipv6 - single exclusion covering entire first range - skips to next range", func() {
+			pool := &ipamv1alpha1.IPPool{
+				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "2001:db8::/120",
+					PerNodeBlockSize: 10,
+					Gateway:          "2001:db8::1",
+					Exclusions: []ipamv1alpha1.ExcludeRange{
+						{StartIP: "2001:db8::1", EndIP: "2001:db8::a"},
+					},
+				},
+			}
+			a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool, sets.New(testNodeName1))
+			node1Alloc, err := a.AllocateFromPool(ctx, testNodeName1)
+			Expect(err).ToNot(HaveOccurred())
+			// Should skip the first range and allocate from the second
+			Expect(node1Alloc.StartIP.String()).To(Equal("2001:db8::b"))
+			Expect(node1Alloc.EndIP.String()).To(Equal("2001:db8::14"))
+		})
+
+		It("ipv6 - partial exclusion - range is not excluded", func() {
+			pool := &ipamv1alpha1.IPPool{
+				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "2001:db8::/120",
+					PerNodeBlockSize: 10,
+					Gateway:          "2001:db8::1",
+					Exclusions: []ipamv1alpha1.ExcludeRange{
+						{StartIP: "2001:db8::3", EndIP: "2001:db8::5"},
+					},
+				},
+			}
+			a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool, sets.New(testNodeName1))
+			node1Alloc, err := a.AllocateFromPool(ctx, testNodeName1)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(node1Alloc.StartIP.String()).To(Equal("2001:db8::1"))
+			Expect(node1Alloc.EndIP.String()).To(Equal("2001:db8::a"))
+		})
+
+		It("ipv6 - per-node exclusion covering entire range - no free range error", func() {
+			pool := &ipamv1alpha1.IPPool{
+				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "2001:db8::/120",
+					PerNodeBlockSize: 10,
+					Gateway:          "2001:db8::1",
+					PerNodeExclusions: []ipamv1alpha1.ExcludeIndexRange{
+						{StartIndex: 0, EndIndex: 9},
+					},
+				},
+			}
+			a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool, sets.New(testNodeName1))
+			_, err := a.AllocateFromPool(ctx, testNodeName1)
+			Expect(err).To(MatchError(allocator.ErrNoFreeRanges))
+		})
+
+		It("ipv6 - multiple exclusions merging to cover range - skips the range", func() {
+			pool := &ipamv1alpha1.IPPool{
+				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "2001:db8::/120",
+					PerNodeBlockSize: 10,
+					Gateway:          "2001:db8::1",
+					Exclusions: []ipamv1alpha1.ExcludeRange{
+						{StartIP: "2001:db8::1", EndIP: "2001:db8::5"},
+						{StartIP: "2001:db8::4", EndIP: "2001:db8::a"},
+					},
+				},
+			}
+			a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool, sets.New(testNodeName1))
+			node1Alloc, err := a.AllocateFromPool(ctx, testNodeName1)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(node1Alloc.StartIP.String()).To(Equal("2001:db8::b"))
+			Expect(node1Alloc.EndIP.String()).To(Equal("2001:db8::14"))
+		})
+
+		It("ipv6 - all ranges excluded - returns no free ranges error", func() {
+			pool := &ipamv1alpha1.IPPool{
+				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "2001:db8::/120",
+					PerNodeBlockSize: 10,
+					Gateway:          "2001:db8::1",
+					Exclusions: []ipamv1alpha1.ExcludeRange{
+						{StartIP: "2001:db8::", EndIP: "2001:db8::ff"},
+					},
+				},
+			}
+			a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool, sets.New(testNodeName1))
+			_, err := a.AllocateFromPool(ctx, testNodeName1)
+			Expect(errors.Is(err, allocator.ErrNoFreeRanges)).To(BeTrue())
+		})
+	})
+
+	Context("load with exclusions", func() {
+		It("load allocation with entirely excluded range is ignored", func() {
+			pool := &ipamv1alpha1.IPPool{
+				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "192.168.0.0/24",
+					PerNodeBlockSize: 10,
+					Gateway:          "192.168.0.1",
+					Exclusions: []ipamv1alpha1.ExcludeRange{
+						{StartIP: "192.168.0.1", EndIP: "192.168.0.10"},
+					},
+				},
+				Status: ipamv1alpha1.IPPoolStatus{
+					Allocations: []ipamv1alpha1.Allocation{
+						{
+							NodeName: testNodeName1,
+							StartIP:  "192.168.0.1",
+							EndIP:    "192.168.0.10",
+						},
+					},
+				},
+			}
+			a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool, sets.New(testNodeName1))
+			// The excluded allocation should be ignored, so node1 gets a new allocation
+			node1Alloc, err := a.AllocateFromPool(ctx, testNodeName1)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(node1Alloc.StartIP.String()).To(Equal("192.168.0.11"))
+			Expect(node1Alloc.EndIP.String()).To(Equal("192.168.0.20"))
+		})
+	})
+
+	Context("allocate for 5000 nodes", func() {
+		It("allocates expected ranges", func() {
+			Skip("This is a long running test, should only be used for benchmark/profiling")
+
+			pool := &ipamv1alpha1.IPPool{
+				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "10.0.0.0/8",
+					PerNodeBlockSize: 10,
+					Gateway:          "10.0.0.1",
+					Exclusions: []ipamv1alpha1.ExcludeRange{
+						{StartIP: "10.0.0.1", EndIP: "10.5.255.255"}, // start allocating for the second half of the subnet
+					},
+				},
+			}
+			a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool, nil)
+			baseIP := net.ParseIP("10.5.255.251")
+			for i := 0; i < 5000; i++ {
+				nodeName := fmt.Sprintf("node-%d", i)
+				nodeAlloc, err := a.AllocateFromPool(ctx, nodeName)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nodeAlloc.StartIP.String()).To(Equal(ip.NextIPWithOffset(baseIP, int64(i*10)).String()))
+				Expect(nodeAlloc.EndIP.String()).To(Equal(ip.NextIPWithOffset(baseIP, int64(i*10)+9).String()))
+				if i%100 == 0 {
+					GinkgoWriter.Printf("allocated %d nodes\n", i)
+				}
+			}
+		})
 	})
 })
