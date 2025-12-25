@@ -83,7 +83,8 @@ func (r *CIDRPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			// Combine IP-based exclusions and index-based per-node exclusions
 			exclusions := buildExclusions(cidrPool.Spec.Exclusions, nodeSubnet, startIP, endIP)
 			// For perNodeExclusions, count indexes from subnet start (consistent with gatewayIndex)
-			exclusions = append(exclusions, buildPerNodeExclusions(cidrPool.Spec.PerNodeExclusions, nodeSubnet.IP, endIP)...)
+			exclusions = append(exclusions,
+				buildPerNodeExclusions(cidrPool.Spec.PerNodeExclusions, nodeSubnet.IP.String(), endIP.String())...)
 			p := &pool.Pool{
 				Name:       cidrPool.Name,
 				Subnet:     alloc.Prefix,
@@ -138,43 +139,19 @@ func buildExclusions(ranges []ipamv1alpha1.ExcludeRange,
 // for the node's allocated prefix. Indexes are counted from the subnet start
 // (network address), consistent with gatewayIndex behavior.
 func buildPerNodeExclusions(
-	ranges []ipamv1alpha1.ExcludeIndexRange, firstIP net.IP, lastIP net.IP) []pool.ExclusionRange {
+	ranges []ipamv1alpha1.ExcludeIndexRange, startIP string, endIP string) []pool.ExclusionRange {
 	if len(ranges) == 0 {
 		return nil
 	}
 
-	exclusions := make([]pool.ExclusionRange, 0, len(ranges))
-	for _, r := range ranges {
-		// Convert start index to IP
-		excludeStartIP := ip.NextIPWithOffset(firstIP, int64(r.StartIndex))
-		if excludeStartIP == nil {
-			continue
-		}
-
-		// Convert end index to IP
-		excludeEndIP := ip.NextIPWithOffset(firstIP, int64(r.EndIndex))
-		if excludeEndIP == nil {
-			continue
-		}
-
-		// Check if the exclusion range is within the node's allocation
-		// Skip if both IPs are outside the range
-		if ip.Cmp(excludeEndIP, firstIP) < 0 || ip.Cmp(excludeStartIP, lastIP) > 0 {
-			continue
-		}
-
-		// Clamp to the node's range
-		if ip.Cmp(excludeStartIP, firstIP) < 0 {
-			excludeStartIP = firstIP
-		}
-		if ip.Cmp(excludeEndIP, lastIP) > 0 {
-			excludeEndIP = lastIP
-		}
-
-		exclusions = append(exclusions, pool.ExclusionRange{
-			StartIP: excludeStartIP.String(),
-			EndIP:   excludeEndIP.String(),
-		})
+	// convert from index based exclusions to IP based exclusions
+	excludeRanges := ipamv1alpha1.ExcludeIndexRangeToExcludeRange(ranges, startIP)
+	// clamp entries to start and end IP
+	excludeRanges = ipamv1alpha1.ClampExcludeRanges(excludeRanges, startIP, endIP)
+	// convert to pool.ExclusionRange
+	exclusions := make([]pool.ExclusionRange, 0, len(excludeRanges))
+	for _, excludeRange := range excludeRanges {
+		exclusions = append(exclusions, pool.ExclusionRange{StartIP: excludeRange.StartIP, EndIP: excludeRange.EndIP})
 	}
 	return exclusions
 }

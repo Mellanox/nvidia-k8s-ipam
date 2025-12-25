@@ -15,7 +15,6 @@ package controllers
 
 import (
 	"context"
-	"net"
 
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -25,7 +24,6 @@ import (
 
 	ipamv1alpha1 "github.com/Mellanox/nvidia-k8s-ipam/api/v1alpha1"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
-	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ip"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/pool"
 )
 
@@ -94,45 +92,14 @@ func buildPerNodeExclusions(
 	if len(ranges) == 0 {
 		return nil
 	}
-
-	rangeStart := net.ParseIP(startIP)
-	rangeEnd := net.ParseIP(endIP)
-	if rangeStart == nil || rangeEnd == nil {
-		return nil
-	}
-
-	exclusions := make([]pool.ExclusionRange, 0, len(ranges))
-	for _, r := range ranges {
-		// Convert start index to IP
-		excludeStartIP := ip.NextIPWithOffset(rangeStart, int64(r.StartIndex))
-		if excludeStartIP == nil {
-			continue
-		}
-
-		// Convert end index to IP
-		excludeEndIP := ip.NextIPWithOffset(rangeStart, int64(r.EndIndex))
-		if excludeEndIP == nil {
-			continue
-		}
-
-		// Check if the exclusion range is within the node's allocation
-		// Skip if both IPs are outside the range
-		if ip.Cmp(excludeEndIP, rangeStart) < 0 || ip.Cmp(excludeStartIP, rangeEnd) > 0 {
-			continue
-		}
-
-		// Clamp to the node's range
-		if ip.Cmp(excludeStartIP, rangeStart) < 0 {
-			excludeStartIP = rangeStart
-		}
-		if ip.Cmp(excludeEndIP, rangeEnd) > 0 {
-			excludeEndIP = rangeEnd
-		}
-
-		exclusions = append(exclusions, pool.ExclusionRange{
-			StartIP: excludeStartIP.String(),
-			EndIP:   excludeEndIP.String(),
-		})
+	// convert from index based exclusions to IP based exclusions
+	excludeRanges := ipamv1alpha1.ExcludeIndexRangeToExcludeRange(ranges, startIP)
+	// clamp entires to start and end IP
+	excludeRanges = ipamv1alpha1.ClampExcludeRanges(excludeRanges, startIP, endIP)
+	// convert to pool.ExclusionRange
+	exclusions := make([]pool.ExclusionRange, 0, len(excludeRanges))
+	for _, excludeRange := range excludeRanges {
+		exclusions = append(exclusions, pool.ExclusionRange{StartIP: excludeRange.StartIP, EndIP: excludeRange.EndIP})
 	}
 	return exclusions
 }

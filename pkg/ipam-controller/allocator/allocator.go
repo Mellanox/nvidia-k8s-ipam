@@ -20,7 +20,6 @@ import (
 	"math"
 	"net"
 	"reflect"
-	"sort"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -70,35 +69,43 @@ func (pa *PoolAllocator) AllocateFromPool(ctx context.Context, node string) (*Al
 			"start", existingAlloc.StartIP, "end", existingAlloc.EndIP)
 		return &existingAlloc, nil
 	}
-	allocations := pa.getAllocationsAsSlice()
+
 	// determine the first possible range for the subnet
 	var startIP net.IP
+	var endIP net.IP
 	if pa.canUseNetworkAddress() {
 		startIP = pa.cfg.Subnet.IP
 	} else {
 		startIP = ip.NextIP(pa.cfg.Subnet.IP)
 	}
-	// check if the first possible range is already allocated, if so, search for "holes" or use the next subnet
-	if len(allocations) != 0 && allocations[0].StartIP.Equal(startIP) {
-		startIP = nil
-		for i := 0; i < len(allocations); i++ {
-			nextI := i + 1
-			// if last allocation in the list
-			if nextI > len(allocations)-1 ||
-				// or we found a "hole" in allocations. the "hole" can't be less than required for
-				// the allocation by design. because we reset all allocations when PerNodeBlockSize size changes
-				ip.Distance(allocations[i].EndIP, allocations[nextI].StartIP) > 1 {
-				startIP = ip.NextIP(allocations[i].EndIP)
-				break
-			}
-		}
-	}
-	endIP := ip.NextIPWithOffset(startIP, int64(pa.cfg.PerNodeBlockSize)-1)
+	endIP = ip.NextIPWithOffset(startIP, int64(pa.cfg.PerNodeBlockSize)-1)
 
-	if startIP == nil ||
-		endIP == nil ||
-		!pa.cfg.Subnet.Contains(endIP) ||
-		ip.IsBroadcast(endIP, pa.cfg.Subnet) {
+	for pa.allocationValid(startIP, endIP) {
+		// check if the entire range is excluded
+		if pa.isEntireRangeExcluded(AllocatedRange{StartIP: startIP, EndIP: endIP}) {
+			startIP, endIP = pa.getNextNonExcludedCandidates(startIP, endIP)
+			continue
+		}
+
+		// entire range is not excluded, check if the range is allocated i.e its present in startIPs
+		if pa.startIps.Has(startIP.String()) {
+			startIP = ip.NextIP(endIP)
+			endIP = ip.NextIPWithOffset(startIP, int64(pa.cfg.PerNodeBlockSize)-1)
+			continue
+		}
+
+		// if perNodeBlockSize is 1, we should not allocate the gateway
+		if pa.cfg.PerNodeBlockSize == 1 && pa.cfg.Gateway != nil && startIP.Equal(pa.cfg.Gateway) {
+			startIP = ip.NextIP(endIP)
+			endIP = ip.NextIPWithOffset(startIP, int64(pa.cfg.PerNodeBlockSize)-1)
+			continue
+		}
+
+		// found free range or allocation is invalid break from the loop
+		break
+	}
+
+	if !pa.allocationValid(startIP, endIP) {
 		// out of range
 		log.Info("can't allocate: pool has no free ranges")
 		return &AllocatedRange{}, ErrNoFreeRanges
@@ -113,6 +120,60 @@ func (pa *PoolAllocator) AllocateFromPool(ctx context.Context, node string) (*Al
 	pa.allocations[node] = a
 	pa.startIps.Insert(startIP.String())
 	return &a, nil
+}
+
+// getNextNonExcludedCandidates returns the next non excluded start and end IP candidates
+func (pa *PoolAllocator) getNextNonExcludedCandidates(currentStartIP net.IP, currentEndIP net.IP) (net.IP, net.IP) {
+	if currentStartIP == nil || currentEndIP == nil {
+		return nil, nil
+	}
+
+	// the next start and end IP candidates start from currentEndIP +1
+	nextStartIP := ip.NextIP(currentEndIP)
+	nextEndIP := ip.NextIPWithOffset(nextStartIP, int64(pa.cfg.PerNodeBlockSize)-1)
+	if nextStartIP == nil || nextEndIP == nil {
+		return nil, nil
+	}
+
+	// merge exclude ranges
+	mergedRanges := ipamv1alpha1.MergeExcludeRanges(pa.cfg.ExcludeRanges)
+
+	for _, excludeRange := range mergedRanges {
+		// find the range that contains startIP, endIP
+		if !excludeRange.Contains(nextStartIP) || !excludeRange.Contains(nextEndIP) {
+			continue
+		}
+
+		// exclude range contains the start and end IP, the next free IP is the next IP after the end of the exclude range
+		// that IP is for sure not excluded because if it was, it would have been included in the merged exclude ranges.
+		nextFreeIP := ip.NextIP(net.ParseIP(excludeRange.EndIP))
+		if nextFreeIP == nil {
+			return nil, nil
+		}
+
+		// align it to the nearest block size boundary and return the next candidate start and end IPs
+		distance := ip.Distance(nextStartIP, nextFreeIP)
+		ipsToSkip := (distance / int64(pa.cfg.PerNodeBlockSize)) * int64(pa.cfg.PerNodeBlockSize)
+
+		nextStartIP = ip.NextIPWithOffset(nextStartIP, ipsToSkip)
+		nextEndIP = ip.NextIPWithOffset(nextStartIP, int64(pa.cfg.PerNodeBlockSize)-1)
+		return nextStartIP, nextEndIP
+	}
+
+	// if we reach this point then startIP and endIP are not fully contained in any of the exclude ranges
+	// so they can be used as candidates for allocation
+	return nextStartIP, nextEndIP
+}
+
+// allocationValid checks if the allocation is valid
+// 1. startIP and endIP are valid IPs
+// 2. endIP is within the subnet (which means startIP is also within the subnet)
+// 3. endIP is not a broadcast IP
+func (pa *PoolAllocator) allocationValid(startIP net.IP, endIP net.IP) bool {
+	return (startIP != nil &&
+		endIP != nil &&
+		pa.cfg.Subnet.Contains(endIP) &&
+		!ip.IsBroadcast(endIP, pa.cfg.Subnet))
 }
 
 // Deallocate remove info about allocation for the node from the poolAllocator
@@ -181,27 +242,51 @@ func (pa *PoolAllocator) checkAllocation(allocRange AllocatedRange) error {
 	if pa.cfg.PerNodeBlockSize == 1 && pa.cfg.Gateway != nil && allocRange.StartIP.Equal(pa.cfg.Gateway) {
 		return fmt.Errorf("gw can't be allocated when perNodeBlockSize is 1")
 	}
+
+	// check if the entire range is excluded
+	if pa.isEntireRangeExcluded(allocRange) {
+		return fmt.Errorf("entire range is excluded")
+	}
+
 	return nil
 }
 
-// return slice with allocated ranges.
-// ranges are not overlap and are sorted, but there can be "holes" between ranges
-func (pa *PoolAllocator) getAllocationsAsSlice() []AllocatedRange {
-	allocatedRanges := make([]AllocatedRange, 0, len(pa.allocations)+1)
+// isEntireRangeExcluded checks if the entire allocated range is excluded
+func (pa *PoolAllocator) isEntireRangeExcluded(allocRange AllocatedRange) bool {
+	// create a merged list of exclude ranges clamped to the allocated range start and end IP
+	excludeRangesFromPerNodeExclusions := ipamv1alpha1.ExcludeIndexRangeToExcludeRange(
+		pa.cfg.PerNodeExclusions, allocRange.StartIP.String())
+	allExcludeRanges := append(pa.cfg.ExcludeRanges, excludeRangesFromPerNodeExclusions...)
+	// Clamp the ranges to the allocated range start and end IP
+	allExcludeRanges = ipamv1alpha1.ClampExcludeRanges(
+		allExcludeRanges, allocRange.StartIP.String(), allocRange.EndIP.String())
+	// Merge the excluded ranges
+	allExcludeRanges = ipamv1alpha1.MergeExcludeRanges(allExcludeRanges)
 
-	if pa.cfg.PerNodeBlockSize == 1 && pa.cfg.Gateway != nil {
-		// in case if perNodeBlockSize is 1 we should not allocate the gateway,
-		// add a "virtual" allocation for the gateway if we detect that only 1 IP is requested per node,
-		// this allocation should never be exposed to the CR's status
-		allocatedRanges = append(allocatedRanges, AllocatedRange{StartIP: pa.cfg.Gateway, EndIP: pa.cfg.Gateway})
+	// if the merged list is empty, then there are no excluded ranges.
+	if len(allExcludeRanges) == 0 {
+		return false
 	}
-	for _, a := range pa.allocations {
-		allocatedRanges = append(allocatedRanges, a)
+
+	// if the merged list contains more than one element, then there are non excluded "holes" in the range. which means
+	// some IPs are potentially still available for allocation.
+	if len(allExcludeRanges) > 1 {
+		return false
 	}
-	sort.Slice(allocatedRanges, func(i, j int) bool {
-		return ip.Cmp(allocatedRanges[i].StartIP, allocatedRanges[j].StartIP) < 0
-	})
-	return allocatedRanges
+
+	// merged list contains exactly one element.
+	// check if the element covers the entire allocated range.
+	excludeStart := net.ParseIP(allExcludeRanges[0].StartIP)
+	excludeEnd := net.ParseIP(allExcludeRanges[0].EndIP)
+	if excludeStart == nil || excludeEnd == nil {
+		return false
+	}
+
+	if ip.Cmp(excludeStart, allocRange.StartIP) <= 0 && ip.Cmp(excludeEnd, allocRange.EndIP) >= 0 {
+		return true
+	}
+
+	return false
 }
 
 // AllocationConfig contains configuration of the IP pool
@@ -211,6 +296,10 @@ type AllocationConfig struct {
 	Gateway          net.IP
 	PerNodeBlockSize int
 	NodeSelector     *corev1.NodeSelector
+	// list of ranges to exclude from allocation
+	ExcludeRanges []ipamv1alpha1.ExcludeRange
+	// list of index ranges to exclude from allocation
+	PerNodeExclusions []ipamv1alpha1.ExcludeIndexRange
 }
 
 func (pc *AllocationConfig) Equal(other *AllocationConfig) bool {
@@ -225,12 +314,15 @@ func CreatePoolAllocatorFromIPPool(ctx context.Context,
 	log := logr.FromContextOrDiscard(ctx)
 	_, subnet, _ := net.ParseCIDR(p.Spec.Subnet)
 	gateway := net.ParseIP(p.Spec.Gateway)
+
 	allocatorConfig := AllocationConfig{
-		PoolName:         p.Name,
-		Subnet:           subnet,
-		Gateway:          gateway,
-		PerNodeBlockSize: p.Spec.PerNodeBlockSize,
-		NodeSelector:     p.Spec.NodeSelector,
+		PoolName:          p.Name,
+		Subnet:            subnet,
+		Gateway:           gateway,
+		PerNodeBlockSize:  p.Spec.PerNodeBlockSize,
+		NodeSelector:      p.Spec.NodeSelector,
+		ExcludeRanges:     p.Spec.Exclusions,
+		PerNodeExclusions: p.Spec.PerNodeExclusions,
 	}
 	pa := newPoolAllocator(allocatorConfig)
 	for i := range p.Status.Allocations {
