@@ -46,9 +46,7 @@ const (
 var _ = Describe("CIDRPool", func() {
 	DescribeTable("buildPerNodeExclusions",
 		func(exclusions []ipamv1alpha1.ExcludeIndexRange, firstIP string, lastIP string, result []pool.ExclusionRange) {
-			first := net.ParseIP(firstIP)
-			last := net.ParseIP(lastIP)
-			Expect(buildPerNodeExclusions(exclusions, first, last)).To(Equal(result))
+			Expect(buildPerNodeExclusions(exclusions, firstIP, lastIP)).To(Equal(result))
 		},
 		Entry("empty exclusions",
 			[]ipamv1alpha1.ExcludeIndexRange{},
