@@ -134,7 +134,7 @@ var _ = Describe("IPPool controller", func() {
 			g.Expect(nl.Items).To(HaveLen(2))
 		}).WithTimeout(time.Second * 10).WithPolling(time.Second).Should(Succeed())
 
-		// create CIDRPool
+		// create IPPool
 		ipPool := getTestIPPool("test-pool")
 		ipPool.Spec.Exclusions = []ipamv1alpha1.ExcludeRange{
 			{StartIP: "10.10.0.0", EndIP: "10.10.1.0"},   // exclude the first 256 addresses + network address

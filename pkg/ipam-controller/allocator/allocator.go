@@ -52,10 +52,24 @@ type PoolAllocator struct {
 	allocations map[string]AllocatedRange
 	// startIps map, key is StartIp as string. It is used to find overlaps
 	startIps sets.Set[string]
+	// lastAllocatedStartIP is the last allocated start IP from AllocateFromPool call
+	// it is used to start the next allocation from the last allocated start IP
+	lastAllocatedStartIP net.IP
 }
 
 func (pa *PoolAllocator) getLog(ctx context.Context, cfg AllocationConfig) logr.Logger {
 	return logr.FromContextOrDiscard(ctx).WithName(fmt.Sprintf("allocator/pool=%s", cfg.PoolName))
+}
+
+// getFirstStartIP returns the first usable start IP for the subnet
+func (pa *PoolAllocator) getFirstStartIP() net.IP {
+	var first net.IP
+	if pa.canUseNetworkAddress() {
+		first = pa.cfg.Subnet.IP
+	} else {
+		first = ip.NextIP(pa.cfg.Subnet.IP)
+	}
+	return first
 }
 
 // AllocateFromPool allocates a new range in the poolAllocator or
@@ -70,27 +84,28 @@ func (pa *PoolAllocator) AllocateFromPool(ctx context.Context, node string) (*Al
 		return &existingAlloc, nil
 	}
 
-	// determine the first possible range for the subnet
+	// determine the next possible range for the subnet
 	var startIP net.IP
 	var endIP net.IP
-	if pa.canUseNetworkAddress() {
-		startIP = pa.cfg.Subnet.IP
+
+	if pa.lastAllocatedStartIP == nil {
+		startIP = pa.getFirstStartIP()
 	} else {
-		startIP = ip.NextIP(pa.cfg.Subnet.IP)
+		startIP = ip.NextIPWithOffset(pa.lastAllocatedStartIP, int64(pa.cfg.PerNodeBlockSize))
 	}
 	endIP = ip.NextIPWithOffset(startIP, int64(pa.cfg.PerNodeBlockSize)-1)
 
 	for pa.allocationValid(startIP, endIP) {
-		// check if the entire range is excluded
-		if pa.isEntireRangeExcluded(AllocatedRange{StartIP: startIP, EndIP: endIP}) {
-			startIP, endIP = pa.getNextNonExcludedCandidates(startIP, endIP)
-			continue
-		}
-
-		// entire range is not excluded, check if the range is allocated i.e its present in startIPs
+		// check if the range is allocated i.e its present in startIPs
 		if pa.startIps.Has(startIP.String()) {
 			startIP = ip.NextIP(endIP)
 			endIP = ip.NextIPWithOffset(startIP, int64(pa.cfg.PerNodeBlockSize)-1)
+			continue
+		}
+
+		// check if the entire range is excluded
+		if pa.isEntireRangeExcluded(AllocatedRange{StartIP: startIP, EndIP: endIP}) {
+			startIP, endIP = pa.getNextNonExcludedCandidates(startIP, endIP)
 			continue
 		}
 
@@ -119,6 +134,7 @@ func (pa *PoolAllocator) AllocateFromPool(ctx context.Context, node string) (*Al
 	}
 	pa.allocations[node] = a
 	pa.startIps.Insert(startIP.String())
+	pa.lastAllocatedStartIP = startIP
 	return &a, nil
 }
 
@@ -174,17 +190,6 @@ func (pa *PoolAllocator) allocationValid(startIP net.IP, endIP net.IP) bool {
 		endIP != nil &&
 		pa.cfg.Subnet.Contains(endIP) &&
 		!ip.IsBroadcast(endIP, pa.cfg.Subnet))
-}
-
-// Deallocate remove info about allocation for the node from the poolAllocator
-func (pa *PoolAllocator) Deallocate(ctx context.Context, node string) {
-	log := pa.getLog(ctx, pa.cfg)
-	log.Info("deallocate range for node", "node", node)
-	a, ok := pa.allocations[node]
-	if ok {
-		pa.startIps.Delete(a.StartIP.String())
-		delete(pa.allocations, node)
-	}
 }
 
 // canUseNetworkAddress returns true if it is allowed to use network address in the node range

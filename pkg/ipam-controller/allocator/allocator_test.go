@@ -69,7 +69,7 @@ var _ = Describe("Allocator", func() {
 		ctx = context.Background()
 	})
 
-	It("Allocate/Deallocate", func() {
+	It("Allocate", func() {
 		pool1 := getPool1()
 		pool2 := getPool2()
 		pa1 := allocator.CreatePoolAllocatorFromIPPool(ctx, pool1, sets.New[string]())
@@ -117,48 +117,6 @@ var _ = Describe("Allocator", func() {
 		Expect(node4AllocPool1.EndIP.String()).To(BeEquivalentTo("192.168.0.60"))
 		Expect(node4AllocPool2.StartIP.String()).To(BeEquivalentTo("172.16.0.5"))
 		Expect(node4AllocPool2.EndIP.String()).To(BeEquivalentTo("172.16.0.5"))
-
-		// deallocate for node3 and node1
-		pa1.Deallocate(ctx, testNodeName1)
-		pa1.Deallocate(ctx, testNodeName3)
-		pa2.Deallocate(ctx, testNodeName1)
-		pa2.Deallocate(ctx, testNodeName3)
-
-		// allocate again, testNodeName3 should have IPs from index 0, testNodeName3 IPs from index 2
-		node3AllocPool1, err = pa1.AllocateFromPool(ctx, testNodeName3)
-		Expect(err).NotTo(HaveOccurred())
-		node3AllocPool2, err = pa2.AllocateFromPool(ctx, testNodeName3)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(node3AllocPool1.StartIP.String()).To(BeEquivalentTo("192.168.0.1"))
-		Expect(node3AllocPool1.EndIP.String()).To(BeEquivalentTo("192.168.0.15"))
-		Expect(node3AllocPool2.StartIP.String()).To(BeEquivalentTo("172.16.0.1"))
-		Expect(node3AllocPool2.EndIP.String()).To(BeEquivalentTo("172.16.0.1"))
-
-		node1AllocPool1, err = pa1.AllocateFromPool(ctx, testNodeName1)
-		Expect(err).ToNot(HaveOccurred())
-		node1AllocPool2, err = pa2.AllocateFromPool(ctx, testNodeName1)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(node1AllocPool1.StartIP.String()).To(BeEquivalentTo("192.168.0.31"))
-		Expect(node1AllocPool1.EndIP.String()).To(BeEquivalentTo("192.168.0.45"))
-		Expect(node1AllocPool2.StartIP.String()).To(BeEquivalentTo("172.16.0.4"))
-		Expect(node1AllocPool2.EndIP.String()).To(BeEquivalentTo("172.16.0.4"))
-	})
-
-	It("Deallocate from pool", func() {
-		pool1 := getPool1()
-		a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool1, sets.New[string]())
-		node1AllocPool1, err := a.AllocateFromPool(ctx, testNodeName1)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(node1AllocPool1.StartIP.String()).To(BeEquivalentTo("192.168.0.1"))
-		Expect(node1AllocPool1.EndIP.String()).To(BeEquivalentTo("192.168.0.15"))
-
-		a.Deallocate(ctx, testNodeName1)
-
-		//Allocate to Node2, should get first range
-		node2AllocPool1, err := a.AllocateFromPool(ctx, testNodeName2)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(node2AllocPool1.StartIP.String()).To(BeEquivalentTo("192.168.0.1"))
-		Expect(node2AllocPool1.EndIP.String()).To(BeEquivalentTo("192.168.0.15"))
 	})
 
 	It("No free ranges", func() {
@@ -881,8 +839,6 @@ var _ = Describe("Allocator", func() {
 
 	Context("allocate for 5000 nodes", func() {
 		It("allocates expected ranges", func() {
-			Skip("This is a long running test, should only be used for benchmark/profiling")
-
 			pool := &ipamv1alpha1.IPPool{
 				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
 				Spec: ipamv1alpha1.IPPoolSpec{
