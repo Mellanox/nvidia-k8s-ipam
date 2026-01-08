@@ -143,6 +143,12 @@ func (r *CIDRPoolReconciler) getNewAllocationForNode(subnetGen func() *net.IPNet
 			// static allocation for the subnet exist (not for the current node), try next subnet
 			continue
 		}
+
+		// skip prefix if it is fully excluded
+		if r.isPrefixFullyExcluded(nodePrefix.String(), pool) {
+			continue
+		}
+
 		break
 	}
 	if nodePrefix == nil {
@@ -207,12 +213,59 @@ func (r *CIDRPoolReconciler) getValidExistingAllocationsMaps(ctx context.Context
 				alloc.NodeName, "prefix", alloc.Prefix, "gateway", alloc.Gateway, "reason", errList.ToAggregate().Error())
 			continue
 		}
+
+		// check if the allocation is fully excluded
+		if r.isPrefixFullyExcluded(alloc.Prefix, pool) {
+			reqLog.Info("allocation is fully excluded, discard allocation for node",
+				"node", alloc.NodeName, "prefix", alloc.Prefix, "gateway", alloc.Gateway)
+			continue
+		}
+
 		nodeMap[alloc.NodeName] = alloc
 		prefixMap[alloc.Prefix] = alloc
 
 		reqLog.Info("keep allocation for node", "node", alloc.NodeName, "prefix", alloc.Prefix, "gateway", alloc.Gateway)
 	}
 	return nodeMap, prefixMap
+}
+
+// isPrefixFullyExcluded checks if the provided prefix is fully excluded by CIDRPool various exclusions.
+func (r *CIDRPoolReconciler) isPrefixFullyExcluded(prefix string, pool *ipamv1alpha1.CIDRPool) bool {
+	// prefix is assumed to be valid, validated by the pool.Validate() call.
+	_, ipn, _ := net.ParseCIDR(prefix)
+	firstIP := ipn.IP
+	lastIP := ip.LastIP(ipn)
+
+	// build a merged list of exclude ranges
+	excludeRanges := append(pool.Spec.Exclusions,
+		ipamv1alpha1.ExcludeIndexRangeToExcludeRange(pool.Spec.PerNodeExclusions, firstIP.String())...)
+	excludeRanges = ipamv1alpha1.ClampExcludeRanges(excludeRanges, firstIP.String(), lastIP.String())
+	excludeRanges = ipamv1alpha1.MergeExcludeRanges(excludeRanges)
+
+	// no exclusions
+	if len(excludeRanges) == 0 {
+		return false
+	}
+
+	// more than one exclusion range means there are non excluded "holes" in the range. which means
+	// some IPs are potentially still available for allocation.
+	if len(excludeRanges) > 1 {
+		return false
+	}
+
+	// merged list contains exactly one element.
+	// check if the element covers the entire range.
+	excludeStart := net.ParseIP(excludeRanges[0].StartIP)
+	excludeEnd := net.ParseIP(excludeRanges[0].EndIP)
+	if excludeStart == nil || excludeEnd == nil {
+		return false
+	}
+
+	if ip.Cmp(excludeStart, firstIP) <= 0 && ip.Cmp(excludeEnd, lastIP) >= 0 {
+		return true
+	}
+
+	return false
 }
 
 // returns two maps with static allocations,

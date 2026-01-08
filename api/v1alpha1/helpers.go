@@ -16,6 +16,7 @@ package v1alpha1
 import (
 	"math/big"
 	"net"
+	"sort"
 
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ip"
 )
@@ -69,4 +70,157 @@ func GetPossibleIPCount(subnet *net.IPNet) *big.Int {
 		ipCount.Sub(ipCount, big.NewInt(1))
 	}
 	return ipCount
+}
+
+// ExcludeIndexRangeToExcludeRange converts index-based exclusions to IP-based exclusions.
+// IPs are calculated as offset from the provided startIP.
+func ExcludeIndexRangeToExcludeRange(excludeIndexRanges []ExcludeIndexRange, startIP string) []ExcludeRange {
+	// startIP, endIP and ranges are assumed to be valid and are checked with the pool validate function.
+	if len(excludeIndexRanges) == 0 {
+		return nil
+	}
+
+	rangeStart := net.ParseIP(startIP)
+	if rangeStart == nil {
+		return nil
+	}
+
+	excludeRanges := make([]ExcludeRange, 0, len(excludeIndexRanges))
+	for _, excludeIndexRange := range excludeIndexRanges {
+		excludeRangeStart := ip.NextIPWithOffset(rangeStart, int64(excludeIndexRange.StartIndex))
+		if excludeRangeStart == nil {
+			continue
+		}
+		excludeRangeEnd := ip.NextIPWithOffset(rangeStart, int64(excludeIndexRange.EndIndex))
+		if excludeRangeEnd == nil {
+			continue
+		}
+
+		excludeRanges = append(excludeRanges,
+			ExcludeRange{StartIP: excludeRangeStart.String(), EndIP: excludeRangeEnd.String()})
+	}
+
+	return excludeRanges
+}
+
+// ClampExcludeRange clamps the exclusion range to the provided startIP and endIP range.
+// Entries outside the range between startIP and endIP (included) are omitted from the result.
+// Entries within the range are clamped to the start and end ip if they end up partly outside the range.
+func ClampExcludeRanges(excludeRanges []ExcludeRange, startIP string, endIP string) []ExcludeRange {
+	// startIP, endIP and ranges are assumed to be valid and are checked with the pool validate function.
+	if len(excludeRanges) == 0 {
+		return nil
+	}
+
+	rangeStart := net.ParseIP(startIP)
+	rangeEnd := net.ParseIP(endIP)
+	if rangeStart == nil || rangeEnd == nil {
+		return nil
+	}
+
+	clampedRanges := make([]ExcludeRange, 0)
+	for _, excludeRange := range excludeRanges {
+		excludeRangeStart := net.ParseIP(excludeRange.StartIP)
+		excludeRangeEnd := net.ParseIP(excludeRange.EndIP)
+
+		if excludeRangeStart == nil || excludeRangeEnd == nil {
+			continue
+		}
+
+		// if exclude range start ip is after range end ip or exclude range end ip is before range start ip, skip
+		if ip.Cmp(excludeRangeStart, rangeEnd) > 0 || ip.Cmp(excludeRangeEnd, rangeStart) < 0 {
+			continue
+		}
+
+		// clamp to the start and end ip
+		if ip.Cmp(excludeRangeStart, rangeStart) < 0 {
+			excludeRangeStart = rangeStart
+		}
+		if ip.Cmp(excludeRangeEnd, rangeEnd) > 0 {
+			excludeRangeEnd = rangeEnd
+		}
+
+		clampedRanges = append(clampedRanges,
+			ExcludeRange{StartIP: excludeRangeStart.String(), EndIP: excludeRangeEnd.String()})
+	}
+
+	return clampedRanges
+}
+
+// MergeExcludeRanges merges overlapping exclude ranges into a single range.
+// it returns a slice of non-overlapping exclude ranges.
+func MergeExcludeRanges(excludeRanges []ExcludeRange) []ExcludeRange {
+	// excludeRanges are assumed to be valid and are checked with the pool validate function.
+	if len(excludeRanges) == 0 {
+		return nil
+	}
+
+	// sort by start IP
+	type excludeRangeIP struct {
+		startIP net.IP
+		endIP   net.IP
+	}
+
+	excludeRangeIPs := make([]excludeRangeIP, 0, len(excludeRanges))
+	for _, excludeRange := range excludeRanges {
+		start := net.ParseIP(excludeRange.StartIP)
+		end := net.ParseIP(excludeRange.EndIP)
+		if start == nil || end == nil {
+			continue
+		}
+
+		excludeRangeIPs = append(excludeRangeIPs, excludeRangeIP{startIP: start, endIP: end})
+	}
+
+	if len(excludeRangeIPs) == 0 {
+		return nil
+	}
+
+	sort.Slice(excludeRangeIPs, func(i, j int) bool {
+		return ip.Cmp(excludeRangeIPs[i].startIP, excludeRangeIPs[j].startIP) < 0
+	})
+
+	// merge ranges
+	current := excludeRangeIPs[0]
+	mergedRangesIPs := make([]excludeRangeIP, 0)
+	for i := 1; i < len(excludeRangeIPs); i++ {
+		next := excludeRangeIPs[i]
+
+		// case1: current range overlaps with next range, merge them
+		// case2: next range starts immediately after current range ends, merge them
+		if ip.Cmp(current.endIP, next.startIP) >= 0 ||
+			ip.Cmp(ip.NextIP(current.endIP), next.startIP) == 0 {
+			if ip.Cmp(current.endIP, next.endIP) < 0 {
+				current.endIP = next.endIP
+			}
+		} else {
+			mergedRangesIPs = append(mergedRangesIPs, excludeRangeIP{startIP: current.startIP, endIP: current.endIP})
+			current = next
+		}
+	}
+	// add the last merged element
+	mergedRangesIPs = append(mergedRangesIPs, excludeRangeIP{startIP: current.startIP, endIP: current.endIP})
+
+	// convert back to ExcludeRange
+	mergedRanges := make([]ExcludeRange, 0, len(mergedRangesIPs))
+	for _, mergedRangeIP := range mergedRangesIPs {
+		mergedRanges = append(mergedRanges,
+			ExcludeRange{StartIP: mergedRangeIP.startIP.String(), EndIP: mergedRangeIP.endIP.String()})
+	}
+	return mergedRanges
+}
+
+// Contains checks if the given IP is contained in exclude range.
+func (er *ExcludeRange) Contains(ipp net.IP) bool {
+	if ipp == nil {
+		return false
+	}
+
+	start := net.ParseIP(er.StartIP)
+	end := net.ParseIP(er.EndIP)
+	if start == nil || end == nil {
+		return false
+	}
+
+	return ip.Cmp(start, ipp) <= 0 && ip.Cmp(end, ipp) >= 0
 }

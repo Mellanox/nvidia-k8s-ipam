@@ -24,7 +24,11 @@ import (
 var _ = Describe("IPPool", func() {
 	DescribeTable("buildPerNodeExclusions",
 		func(exclusions []ipamv1alpha1.ExcludeIndexRange, startIP string, endIP string, result []pool.ExclusionRange) {
-			Expect(buildPerNodeExclusions(exclusions, startIP, endIP)).To(Equal(result))
+			if result == nil {
+				Expect(buildPerNodeExclusions(exclusions, startIP, endIP)).To(BeEmpty())
+			} else {
+				Expect(buildPerNodeExclusions(exclusions, startIP, endIP)).To(Equal(result))
+			}
 		},
 		Entry("empty exclusions",
 			[]ipamv1alpha1.ExcludeIndexRange{},
