@@ -59,7 +59,7 @@ func (r *CIDRPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	pool := &ipamv1alpha1.CIDRPool{}
-	err := r.Client.Get(ctx, req.NamespacedName, pool)
+	err := r.Get(ctx, req.NamespacedName, pool)
 	if err != nil {
 		if apiErrors.IsNotFound(err) {
 			reqLog.Info("CIDRPool not found")
@@ -289,7 +289,7 @@ func (r *CIDRPoolReconciler) getMatchingNodes(
 	ctx context.Context, nodeSelector *corev1.NodeSelector) ([]string, error) {
 	reqLog := log.FromContext(ctx)
 	nodeList := &corev1.NodeList{}
-	if err := r.Client.List(ctx, nodeList); err != nil {
+	if err := r.List(ctx, nodeList); err != nil {
 		reqLog.Error(err, "failed to list Nodes")
 		return nil, err
 	}

@@ -40,7 +40,7 @@ func (r *IPPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	reqLog := log.FromContext(ctx)
 	ipPool := &ipamv1alpha1.IPPool{}
 	poolKey := common.GetPoolKey(req.Name, common.PoolTypeIPPool)
-	err := r.Client.Get(ctx, req.NamespacedName, ipPool)
+	err := r.Get(ctx, req.NamespacedName, ipPool)
 	if err != nil {
 		if apiErrors.IsNotFound(err) {
 			reqLog.Info("IPPool not found, removing from PoolManager")

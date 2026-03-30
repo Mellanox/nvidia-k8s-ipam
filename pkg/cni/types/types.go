@@ -118,9 +118,9 @@ type IPAMArgs struct {
 type IPAMEnvArgs struct {
 	types.CommonArgs
 	IP                types.UnmarshallableString
-	K8S_POD_NAME      types.UnmarshallableString //nolint
-	K8S_POD_NAMESPACE types.UnmarshallableString //nolint
-	K8S_POD_UID       types.UnmarshallableString //nolint
+	K8S_POD_NAME      types.UnmarshallableString
+	K8S_POD_NAMESPACE types.UnmarshallableString
+	K8S_POD_UID       types.UnmarshallableString
 }
 
 type confLoader struct{}
@@ -304,7 +304,7 @@ func getPoolType(n *NetConf) (string, error) {
 
 // loadFromConfFile returns *IPAMConf with values from config file located in filePath.
 func (cl *confLoader) loadFromConfFile(filePath string) (*IPAMConf, error) {
-	data, err := os.ReadFile(filePath)
+	data, err := os.ReadFile(filepath.Clean(filePath))
 	if err != nil {
 		return nil, err
 	}

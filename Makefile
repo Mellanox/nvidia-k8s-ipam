@@ -139,7 +139,7 @@ $(GRPC_TMP_DIR):
 
 ## Tool Binaries
 ENVTEST ?= $(LOCALBIN)/setup-envtest
-GOLANGCILINT ?= $(LOCALBIN)/golangci-lint
+GOLANGCILINT ?= $(LOCALBIN)/golangci-lint-$(GOLANGCILINT_VERSION)
 GCOV2LCOV ?= $(LOCALBIN)/gcov2lcov
 MOCKERY ?= $(LOCALBIN)/mockery
 PROTOC ?= $(LOCALBIN)/protoc/bin/protoc
@@ -149,7 +149,7 @@ BUF ?= $(LOCALBIN)/buf
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 
 ## Tool Versions
-GOLANGCILINT_VERSION ?= v1.62.2
+GOLANGCILINT_VERSION ?= v2.11.4
 GCOV2LCOV_VERSION ?= v1.0.5
 MOCKERY_VERSION ?= v2.49.1
 PROTOC_VER ?= 28.3
@@ -167,7 +167,8 @@ $(ENVTEST): | $(LOCALBIN)
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCILINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCILINT): | $(LOCALBIN)
-	GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCILINT_VERSION)
+	GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCILINT_VERSION)
+	mv $(LOCALBIN)/golangci-lint $(GOLANGCILINT)
 
 .PHONY: gcov2lcov
 gcov2lcov: $(GCOV2LCOV) ## Download gcov2lcov locally if necessary.

@@ -92,7 +92,7 @@ func (s *RangeSet) Canonicalize() error {
 
 // String returns string representation of the RangeSet
 func (s *RangeSet) String() string {
-	out := []string{}
+	out := make([]string, 0, len(*s))
 	for _, r := range *s {
 		out = append(out, r.String())
 	}

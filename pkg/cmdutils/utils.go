@@ -33,22 +33,22 @@ func CopyFileAtomic(srcFilePath, destDir, tempFileName, destFileName string) err
 
 	// create temp file
 	f, err := os.CreateTemp(destDir, tempFileName)
-	defer f.Close() //nolint:golint,staticcheck
 	if err != nil {
 		return fmt.Errorf("cannot create temp file %q in %q: %v", tempFileName, destDir, err)
 	}
+	defer func() { _ = f.Close() }()
 
-	srcFile, err := os.Open(srcFilePath)
+	srcFile, err := os.Open(filepath.Clean(srcFilePath))
 	if err != nil {
 		return fmt.Errorf("cannot open file %q: %v", srcFilePath, err)
 	}
-	defer srcFile.Close()
+	defer func() { _ = srcFile.Close() }()
 
 	// Copy file to tempfile
 	_, err = io.Copy(f, srcFile)
 	if err != nil {
-		f.Close()
-		os.Remove(tempFilePath)
+		_ = f.Close()
+		_ = os.Remove(tempFilePath)
 		return fmt.Errorf("cannot write data to temp file %q: %v", tempFilePath, err)
 	}
 	if err := f.Sync(); err != nil {
