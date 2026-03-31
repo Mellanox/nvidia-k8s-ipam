@@ -43,7 +43,7 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	reqLog := log.FromContext(ctx)
 	reqLog.Info("Notification on Node", "name", req.Name)
 	node := &corev1.Node{}
-	err := r.Client.Get(ctx, req.NamespacedName, node)
+	err := r.Get(ctx, req.NamespacedName, node)
 	if err != nil {
 		if !apiErrors.IsNotFound(err) {
 			return ctrl.Result{}, err
@@ -52,7 +52,7 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 	// node updated, trigger sync for all pools
 	ipPoolList := &ipamv1alpha1.IPPoolList{}
-	if err := r.Client.List(ctx, ipPoolList, client.InNamespace(r.PoolsNamespace)); err != nil {
+	if err := r.List(ctx, ipPoolList, client.InNamespace(r.PoolsNamespace)); err != nil {
 		return ctrl.Result{}, err
 	}
 	for _, p := range ipPoolList.Items {
@@ -62,7 +62,7 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			}}
 	}
 	cidrPoolList := &ipamv1alpha1.CIDRPoolList{}
-	if err := r.Client.List(ctx, cidrPoolList, client.InNamespace(r.PoolsNamespace)); err != nil {
+	if err := r.List(ctx, cidrPoolList, client.InNamespace(r.PoolsNamespace)); err != nil {
 		return ctrl.Result{}, err
 	}
 	for _, p := range cidrPoolList.Items {

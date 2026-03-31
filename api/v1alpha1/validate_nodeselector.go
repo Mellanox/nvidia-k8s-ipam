@@ -44,7 +44,7 @@ func validateNodeSelector(nodeSelector *corev1.NodeSelector, fldPath *field.Path
 
 // validateNodeSelectorTerm tests that the specified node selector term has valid data
 func validateNodeSelectorTerm(term corev1.NodeSelectorTerm, fldPath *field.Path) field.ErrorList {
-	allErrs := field.ErrorList{}
+	allErrs := make(field.ErrorList, 0, len(term.MatchExpressions)+len(term.MatchFields))
 
 	for j, req := range term.MatchExpressions {
 		allErrs = append(allErrs, validateNodeSelectorRequirement(req,

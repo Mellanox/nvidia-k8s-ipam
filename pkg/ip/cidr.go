@@ -196,10 +196,7 @@ func GetSubnetGen(network *net.IPNet, prefixSize int32) func() *net.IPNet {
 	if prefixSize < int32(networkOnes) || prefixSize > int32(netBitsTotal) {
 		return func() *net.IPNet { return nil }
 	}
-	isIPv6 := false
-	if network.IP.To4() == nil {
-		isIPv6 = true
-	}
+	isIPv6 := network.IP.To4() == nil
 	networkIPAsInt := ipToInt(network.IP)
 	subnetIPCount := big.NewInt(0).Exp(big.NewInt(2), big.NewInt(int64(netBitsTotal)-int64(prefixSize)), nil)
 	subnetCount := big.NewInt(0).Exp(big.NewInt(2), big.NewInt(int64(prefixSize)-int64(networkOnes)), nil)

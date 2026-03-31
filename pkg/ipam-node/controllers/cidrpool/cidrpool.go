@@ -42,7 +42,7 @@ func (r *CIDRPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	reqLog := log.FromContext(ctx)
 	cidrPool := &ipamv1alpha1.CIDRPool{}
 	poolKey := common.GetPoolKey(req.Name, common.PoolTypeCIDRPool)
-	err := r.Client.Get(ctx, req.NamespacedName, cidrPool)
+	err := r.Get(ctx, req.NamespacedName, cidrPool)
 	if err != nil {
 		if apiErrors.IsNotFound(err) {
 			reqLog.Info("CIDRPool not found, removing from PoolManager")

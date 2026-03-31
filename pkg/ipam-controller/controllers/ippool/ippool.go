@@ -60,7 +60,7 @@ func (r *IPPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	pool := &ipamv1alpha1.IPPool{}
-	err := r.Client.Get(ctx, req.NamespacedName, pool)
+	err := r.Get(ctx, req.NamespacedName, pool)
 	if err != nil {
 		if apiErrors.IsNotFound(err) {
 			reqLog.Info("IPPool not found")
@@ -77,7 +77,7 @@ func (r *IPPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	nodeList := &corev1.NodeList{}
-	if err := r.Client.List(ctx, nodeList); err != nil {
+	if err := r.List(ctx, nodeList); err != nil {
 		reqLog.Error(err, "failed to list Nodes")
 		return ctrl.Result{}, err
 	}

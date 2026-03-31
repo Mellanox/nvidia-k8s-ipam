@@ -219,7 +219,7 @@ func RunNodeDaemon(ctx context.Context, config *rest.Config, opts *options.Optio
 	}
 	s.Cancel()
 
-	grpcServer, listener, err := initGRPCServer(opts, logger, poolManager, store)
+	grpcServer, listener, err := initGRPCServer(ctx, opts, logger, poolManager, store)
 	if err != nil {
 		return err
 	}
@@ -289,7 +289,7 @@ func RunNodeDaemon(ctx context.Context, config *rest.Config, opts *options.Optio
 	return nil
 }
 
-func initGRPCServer(opts *options.Options,
+func initGRPCServer(ctx context.Context, opts *options.Options,
 	log logr.Logger, poolConfReader poolPkg.ConfigReader, store storePkg.Store) (*grpc.Server, net.Listener, error) {
 	network, address, err := options.ParseBindAddress(opts.BindAddress)
 	if err != nil {
@@ -299,7 +299,8 @@ func initGRPCServer(opts *options.Options,
 		log.Error(err, "failed to clean socket path")
 		return nil, nil, err
 	}
-	listener, err := net.Listen(network, address)
+	lc := net.ListenConfig{}
+	listener, err := lc.Listen(ctx, network, address)
 	if err != nil {
 		log.Error(err, "failed to start listener for GRPC server")
 		return nil, nil, err
