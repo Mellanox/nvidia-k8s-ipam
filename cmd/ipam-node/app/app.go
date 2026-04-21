@@ -32,6 +32,7 @@ import (
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -151,7 +152,11 @@ func RunNodeDaemon(ctx context.Context, config *rest.Config, opts *options.Optio
 		Cache: cache.Options{
 			DefaultNamespaces: map[string]cache.Config{opts.PoolsNamespace: {}},
 			ByObject: map[client.Object]cache.ByObject{
-				&corev1.Pod{}: {Namespaces: map[string]cache.Config{cache.AllNamespaces: {}}}},
+				&corev1.Pod{}: {
+					Namespaces: map[string]cache.Config{cache.AllNamespaces: {}},
+					Field:      fields.OneTermEqualSelector("spec.nodeName", opts.NodeName),
+				},
+			},
 		},
 	})
 	if err != nil {
