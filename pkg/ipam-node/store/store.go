@@ -166,7 +166,7 @@ func (s *session) Commit() error {
 		s.log.Error(err, "failed to write data to disk")
 		return err
 	}
-	*s.persistedData = *s.tmpData.DeepCopy()
+	*s.persistedData = *s.tmpData
 	return nil
 }
 
