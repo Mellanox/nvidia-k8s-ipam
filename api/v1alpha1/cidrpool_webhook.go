@@ -16,10 +16,8 @@ package v1alpha1
 import (
 	"context"
 
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logPkg "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
@@ -27,21 +25,20 @@ var cidrPoolLogger = logPkg.Log.WithName("CIDRPool-validator")
 
 // SetupWebhookWithManager registers webhook handler in the manager
 func (r *CIDRPool) SetupWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(r).
+	return ctrl.NewWebhookManagedBy(mgr, r).
 		Complete()
 }
 
-var _ webhook.CustomValidator = &CIDRPool{}
+var _ admission.Validator[*CIDRPool] = &CIDRPool{}
 
-// ValidateCreate implements webhook.Validator so a webhook will be registered for the type
-func (r *CIDRPool) ValidateCreate(_ context.Context, _ runtime.Object) (admission.Warnings, error) {
+// ValidateCreate implements admission.Validator so a webhook will be registered for the type
+func (r *CIDRPool) ValidateCreate(_ context.Context, _ *CIDRPool) (admission.Warnings, error) {
 	cidrPoolLogger.V(1).Info("validate create", "name", r.Name)
 	return r.validate()
 }
 
-// ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (r *CIDRPool) ValidateUpdate(_ context.Context, _, _ runtime.Object) (admission.Warnings, error) {
+// ValidateUpdate implements admission.Validator so a webhook will be registered for the type
+func (r *CIDRPool) ValidateUpdate(_ context.Context, _, _ *CIDRPool) (admission.Warnings, error) {
 	cidrPoolLogger.V(1).Info("validate update", "name", r.Name)
 	return r.validate()
 }
@@ -57,7 +54,7 @@ func (r *CIDRPool) validate() (admission.Warnings, error) {
 	return nil, err
 }
 
-// ValidateDelete implements webhook.Validator so a webhook will be registered for the type
-func (r *CIDRPool) ValidateDelete(_ context.Context, _ runtime.Object) (admission.Warnings, error) {
+// ValidateDelete implements admission.Validator so a webhook will be registered for the type
+func (r *CIDRPool) ValidateDelete(_ context.Context, _ *CIDRPool) (admission.Warnings, error) {
 	return nil, nil
 }

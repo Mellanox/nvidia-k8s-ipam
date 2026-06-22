@@ -16,10 +16,8 @@ package v1alpha1
 import (
 	"context"
 
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logPkg "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
@@ -27,21 +25,20 @@ var logger = logPkg.Log.WithName("IPPool-validator")
 
 // SetupWebhookWithManager registers webhook handler in the manager
 func (r *IPPool) SetupWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(r).
+	return ctrl.NewWebhookManagedBy(mgr, r).
 		Complete()
 }
 
-var _ webhook.CustomValidator = &IPPool{}
+var _ admission.Validator[*IPPool] = &IPPool{}
 
-// ValidateCreate implements webhook.Validator so a webhook will be registered for the type
-func (r *IPPool) ValidateCreate(_ context.Context, _ runtime.Object) (admission.Warnings, error) {
+// ValidateCreate implements admission.Validator so a webhook will be registered for the type
+func (r *IPPool) ValidateCreate(_ context.Context, _ *IPPool) (admission.Warnings, error) {
 	logger.V(1).Info("validate create", "name", r.Name)
 	return r.validate()
 }
 
-// ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (r *IPPool) ValidateUpdate(_ context.Context, _, _ runtime.Object) (admission.Warnings, error) {
+// ValidateUpdate implements admission.Validator so a webhook will be registered for the type
+func (r *IPPool) ValidateUpdate(_ context.Context, _, _ *IPPool) (admission.Warnings, error) {
 	logger.V(1).Info("validate update", "name", r.Name)
 	return r.validate()
 }
@@ -57,7 +54,7 @@ func (r *IPPool) validate() (admission.Warnings, error) {
 	return nil, err
 }
 
-// ValidateDelete implements webhook.Validator so a webhook will be registered for the type
-func (r *IPPool) ValidateDelete(_ context.Context, _ runtime.Object) (admission.Warnings, error) {
+// ValidateDelete implements admission.Validator so a webhook will be registered for the type
+func (r *IPPool) ValidateDelete(_ context.Context, _ *IPPool) (admission.Warnings, error) {
 	return nil, nil
 }

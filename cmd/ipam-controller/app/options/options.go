@@ -22,6 +22,8 @@ import (
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/cmdoptions"
 )
 
+const defaultNamespace = "kube-system"
+
 // New initialize and return new Options object
 func New() *Options {
 	return &Options{
@@ -30,8 +32,8 @@ func New() *Options {
 		ProbeAddr:               ":8081",
 		EnableLeaderElection:    false,
 		EnableWebHook:           false,
-		LeaderElectionNamespace: "kube-system",
-		IPPoolsNamespace:        "kube-system",
+		LeaderElectionNamespace: defaultNamespace,
+		IPPoolsNamespace:        defaultNamespace,
 	}
 }
 

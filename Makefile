@@ -21,7 +21,10 @@ DOCKERFILE ?= Dockerfile
 DOCKER_CMD ?= docker
 
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.31.0
+ENVTEST_K8S_VERSION = 1.36.0
+
+# GO_MOD_VERSION is the Go version declared in go.mod, used to pin GOTOOLCHAIN for tool installs.
+GO_MOD_VERSION ?= $(shell sed -n 's/^go //p' go.mod)
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -149,36 +152,36 @@ BUF ?= $(LOCALBIN)/buf
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 
 ## Tool Versions
-GOLANGCILINT_VERSION ?= v2.11.4
+GOLANGCILINT_VERSION ?= v2.12.2
 GCOV2LCOV_VERSION ?= v1.0.5
 MOCKERY_VERSION ?= v2.49.1
 PROTOC_VER ?= 28.3
 PROTOC_GEN_GO_VER ?= 1.35.2
 PROTOC_GEN_GO_GRPC_VER ?= 1.5.1
 BUF_VERSION ?= 1.47.2
-CONTROLLER_GEN_VERSION ?= v0.16.5
-SETUP_ENVTEST_VERSION ?= release-0.21
+CONTROLLER_GEN_VERSION ?= v0.21.0
+SETUP_ENVTEST_VERSION ?= release-0.24
 
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
 $(ENVTEST): | $(LOCALBIN)
-	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(SETUP_ENVTEST_VERSION)
+	GOBIN=$(LOCALBIN) GOTOOLCHAIN=go$(GO_MOD_VERSION) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(SETUP_ENVTEST_VERSION)
 
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCILINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCILINT): | $(LOCALBIN)
-	GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCILINT_VERSION)
+	GOBIN=$(LOCALBIN) GOTOOLCHAIN=go$(GO_MOD_VERSION) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCILINT_VERSION)
 	mv $(LOCALBIN)/golangci-lint $(GOLANGCILINT)
 
 .PHONY: gcov2lcov
 gcov2lcov: $(GCOV2LCOV) ## Download gcov2lcov locally if necessary.
 $(GCOV2LCOV): | $(LOCALBIN)
-	GOBIN=$(LOCALBIN) go install github.com/jandelgado/gcov2lcov@$(GCOV2LCOV_VERSION)
+	GOBIN=$(LOCALBIN) GOTOOLCHAIN=go$(GO_MOD_VERSION) go install github.com/jandelgado/gcov2lcov@$(GCOV2LCOV_VERSION)
 
 .PHONY: mockery
 mockery: $(MOCKERY) ## Download mockery locally if necessary.
 $(MOCKERY): | $(LOCALBIN)
-	GOBIN=$(LOCALBIN) go install github.com/vektra/mockery/v2@$(MOCKERY_VERSION)
+	GOBIN=$(LOCALBIN) GOTOOLCHAIN=go$(GO_MOD_VERSION) go install github.com/vektra/mockery/v2@$(MOCKERY_VERSION)
 
 .PHONY: protoc
 PROTOC_REL ?= https://github.com/protocolbuffers/protobuf/releases
@@ -191,12 +194,12 @@ $(PROTOC): | $(LOCALBIN)
 .PHONY: protoc-gen-go
 protoc-gen-go: $(PROTOC_GEN_GO) ## Download protoc-gen-go locally if necessary.
 $(PROTOC_GEN_GO): | $(LOCALBIN)
-	GOBIN=$(LOCALBIN) go install google.golang.org/protobuf/cmd/protoc-gen-go@v$(PROTOC_GEN_GO_VER)
+	GOBIN=$(LOCALBIN) GOTOOLCHAIN=go$(GO_MOD_VERSION) go install google.golang.org/protobuf/cmd/protoc-gen-go@v$(PROTOC_GEN_GO_VER)
 
 .PHONY: protoc-gen-go-grpc
 protoc-gen-go-grpc: $(PROTOC_GEN_GO_GRPC) ## Download protoc-gen-go locally if necessary.
 $(PROTOC_GEN_GO_GRPC): | $(LOCALBIN)
-	GOBIN=$(LOCALBIN) go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v$(PROTOC_GEN_GO_GRPC_VER)
+	GOBIN=$(LOCALBIN) GOTOOLCHAIN=go$(GO_MOD_VERSION) go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v$(PROTOC_GEN_GO_GRPC_VER)
 
 .PHONY: buf
 buf: $(BUF) ## Download buf locally if necessary
@@ -265,7 +268,7 @@ grpc-format: buf  ## Format GRPC files
 .PHONY: controller-gen
 controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary
 $(CONTROLLER_GEN): | $(LOCALBIN)
-	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_GEN_VERSION)
+	GOBIN=$(LOCALBIN) GOTOOLCHAIN=go$(GO_MOD_VERSION) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_GEN_VERSION)
 
 .PHONY: generate
 generate: controller-gen

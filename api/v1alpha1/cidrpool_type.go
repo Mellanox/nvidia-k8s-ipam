@@ -91,7 +91,3 @@ type CIDRPoolList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []CIDRPool `json:"items"`
 }
-
-func init() {
-	SchemeBuilder.Register(&CIDRPool{}, &CIDRPoolList{})
-}
