@@ -74,7 +74,3 @@ type IPPoolList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []IPPool `json:"items"`
 }
-
-func init() {
-	SchemeBuilder.Register(&IPPool{}, &IPPoolList{})
-}

@@ -30,7 +30,7 @@ func New() *Options {
 
 // Options holds shared command line options
 type Options struct {
-	FeatureGate featuregate.MutableFeatureGate
+	FeatureGate featuregate.MutableVersionedFeatureGate
 	LogConfig   *logsapi.LoggingConfiguration
 }
 

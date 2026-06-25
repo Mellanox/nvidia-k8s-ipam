@@ -5,7 +5,7 @@ COPYRIGHT_YEAR          ?= $(shell date +%Y)
 COPYRIGHT_OWNER         ?= NVIDIA CORPORATION & AFFILIATES
 COPYRIGHT_STYLE         ?= apache
 COPYRIGHT_FLAGS         ?= -s
-COPYRIGHT_EXCLUDE       ?= vendor deployment config bundle .*
+COPYRIGHT_EXCLUDE       ?= vendor deployment config bundle deploy .*
 GIT_LS_FILES_EXCLUDES := $(foreach d,$(COPYRIGHT_EXCLUDE),:^"$(d)")
 
 # --- Tool paths ---
