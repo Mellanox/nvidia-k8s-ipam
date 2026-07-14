@@ -72,10 +72,6 @@ updates:
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "k8s.io/*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
-      - dependency-name: '*'
-        update-types:
-          - version-update:semver-major
-          - version-update:semver-minor
     commit-message:
       prefix: "chore:"
     target-branch: network-operator-26.1.x
@@ -120,10 +116,6 @@ updates:
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "k8s.io/*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
-      - dependency-name: '*'
-        update-types:
-          - version-update:semver-major
-          - version-update:semver-minor
     commit-message:
       prefix: "chore:"
     target-branch: network-operator-26.4.x
