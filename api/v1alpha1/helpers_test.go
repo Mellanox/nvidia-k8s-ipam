@@ -14,6 +14,7 @@
 package v1alpha1_test
 
 import (
+	"math/big"
 	"net"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -23,6 +24,24 @@ import (
 )
 
 var _ = Describe("Helpers", func() {
+	DescribeTable("ExcludeIndexRangesCover",
+		func(exclusions []v1alpha1.ExcludeIndexRange, lastIndex int64, expected bool) {
+			Expect(v1alpha1.ExcludeIndexRangesCover(exclusions, big.NewInt(lastIndex))).To(Equal(expected))
+		},
+		Entry("single covering range", []v1alpha1.ExcludeIndexRange{{StartIndex: 0, EndIndex: 15}}, int64(15), true),
+		Entry("adjacent ranges", []v1alpha1.ExcludeIndexRange{
+			{StartIndex: 8, EndIndex: 15}, {StartIndex: 0, EndIndex: 7},
+		}, int64(15), true),
+		Entry("overlapping ranges", []v1alpha1.ExcludeIndexRange{
+			{StartIndex: 0, EndIndex: 8}, {StartIndex: 4, EndIndex: 15},
+		}, int64(15), true),
+		Entry("gap", []v1alpha1.ExcludeIndexRange{
+			{StartIndex: 0, EndIndex: 7}, {StartIndex: 9, EndIndex: 15},
+		}, int64(15), false),
+		Entry("does not start at zero", []v1alpha1.ExcludeIndexRange{{StartIndex: 1, EndIndex: 15}}, int64(15), false),
+		Entry("range is too short", []v1alpha1.ExcludeIndexRange{{StartIndex: 0, EndIndex: 14}}, int64(15), false),
+	)
+
 	DescribeTable("GetGatewayForSubnet",
 		func(subnet string, index int, gw string) {
 			_, network, err := net.ParseCIDR(subnet)

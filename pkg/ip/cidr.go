@@ -16,6 +16,7 @@ package ip
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math/big"
 	"net"
 )
@@ -31,18 +32,22 @@ func NextIP(ip net.IP) net.IP {
 	return intToIP(i.Add(i, big.NewInt(1)), len(normalizedIP) == net.IPv6len)
 }
 
-// NextIPWithOffset returns IP incremented by offset, if IP is invalid, return nil
-func NextIPWithOffset(ip net.IP, offset int64) net.IP {
-	if offset < 0 {
-		return nil
+// NextIPWithOffset returns IP incremented by offset.
+func NextIPWithOffset(ip net.IP, offset *big.Int) (net.IP, error) {
+	if offset == nil || offset.Sign() < 0 {
+		return nil, fmt.Errorf("offset must be non-negative")
 	}
 	normalizedIP := NormalizeIP(ip)
 	if normalizedIP == nil {
-		return nil
+		return nil, fmt.Errorf("invalid IP address")
 	}
 
 	i := ipToInt(normalizedIP)
-	return intToIP(i.Add(i, big.NewInt(offset)), len(normalizedIP) == net.IPv6len)
+	nextIP := intToIP(i.Add(i, offset), len(normalizedIP) == net.IPv6len)
+	if nextIP == nil {
+		return nil, fmt.Errorf("IP address overflow")
+	}
+	return nextIP, nil
 }
 
 // PrevIP returns IP decremented by 1, if IP is invalid, return nil
@@ -72,24 +77,22 @@ func Cmp(a, b net.IP) int {
 	return -2
 }
 
-// Distance returns amount of IPs between a and b
-// returns -1 if result is negative
-// returns -2 if result is too large or IPs are not valid addresses
-func Distance(a, b net.IP) int64 {
+// Distance returns the non-negative distance between two addresses of the same family.
+func Distance(a, b net.IP) (*big.Int, error) {
 	normalizedA := NormalizeIP(a)
 	normalizedB := NormalizeIP(b)
-
-	if len(normalizedA) == len(normalizedB) && len(normalizedA) != 0 {
-		count := big.NewInt(0).Sub(ipToInt(normalizedB), ipToInt(normalizedA))
-		if !count.IsInt64() {
-			return -2
-		}
-		if count.Sign() < 0 {
-			return -1
-		}
-		return count.Int64()
+	if len(normalizedA) == 0 || len(normalizedB) == 0 {
+		return nil, fmt.Errorf("invalid IP address")
 	}
-	return -2
+	if len(normalizedA) != len(normalizedB) {
+		return nil, fmt.Errorf("IP address families do not match")
+	}
+
+	distance := new(big.Int).Sub(ipToInt(normalizedB), ipToInt(normalizedA))
+	if distance.Sign() < 0 {
+		return nil, fmt.Errorf("second IP address must not precede first IP address")
+	}
+	return distance, nil
 }
 
 func ipToInt(ip net.IP) *big.Int {
@@ -177,42 +180,103 @@ func LastIP(network *net.IPNet) net.IP {
 	return end
 }
 
-// GetSubnetGen returns generator function that can be called multiple times
-// to generate subnet for the network with the prefix size.
-// The function always returns non-nil function.
-// The generator function will return nil If subnet can't be generate
-// (invalid input args provided, or no more subnets available for the network).
-// Example:
-// _, network, _ := net.ParseCIDR("192.168.0.0/23")
-// gen := GetSubnetGen(network, 25)
-// println(gen().String()) // 192.168.0.0/25
-// println(gen().String()) // 192.168.0.128/25
-// println(gen().String()) // 192.168.1.0/25
-// println(gen().String()) // 192.168.1.128/25
-// println(gen().String()) // <nil> - no more ranges available
-func GetSubnetGen(network *net.IPNet, prefixSize int32) func() *net.IPNet {
+// SubnetIterator iterates over fixed-size prefixes in a network and can skip large address intervals in constant time.
+type SubnetIterator struct {
+	isIPv6         bool
+	netBitsTotal   int
+	prefixSize     int32
+	networkIPAsInt *big.Int
+	subnetIPCount  *big.Int
+	subnetCount    *big.Int
+	nextIndex      *big.Int
+}
+
+// NewSubnetIterator creates an iterator over prefixSize subnets in network.
+func NewSubnetIterator(network *net.IPNet, prefixSize int32) (*SubnetIterator, error) {
+	if network == nil {
+		return nil, fmt.Errorf("network must not be nil")
+	}
 	networkOnes, netBitsTotal := network.Mask.Size()
+	if netBitsTotal != net.IPv4len*8 && netBitsTotal != net.IPv6len*8 {
+		return nil, fmt.Errorf("network mask must be a valid IPv4 or IPv6 mask")
+	}
 	//nolint: gosec
 	if prefixSize < int32(networkOnes) || prefixSize > int32(netBitsTotal) {
-		return func() *net.IPNet { return nil }
+		return nil, fmt.Errorf("prefix size must be between %d and %d", networkOnes, netBitsTotal)
 	}
-	isIPv6 := network.IP.To4() == nil
-	networkIPAsInt := ipToInt(network.IP)
-	subnetIPCount := big.NewInt(0).Exp(big.NewInt(2), big.NewInt(int64(netBitsTotal)-int64(prefixSize)), nil)
-	subnetCount := big.NewInt(0).Exp(big.NewInt(2), big.NewInt(int64(prefixSize)-int64(networkOnes)), nil)
 
-	curSubnetIndex := big.NewInt(0)
-
-	return func() *net.IPNet {
-		if curSubnetIndex.Cmp(subnetCount) >= 0 {
-			return nil
-		}
-		subnetIPAsInt := big.NewInt(0).Add(networkIPAsInt, big.NewInt(0).Mul(subnetIPCount, curSubnetIndex))
-		curSubnetIndex.Add(curSubnetIndex, big.NewInt(1))
-		subnetIP := intToIP(subnetIPAsInt, isIPv6)
-		if subnetIP == nil {
-			return nil
-		}
-		return &net.IPNet{IP: subnetIP, Mask: net.CIDRMask(int(prefixSize), netBitsTotal)}
+	var normalizedNetworkIP net.IP
+	if netBitsTotal == net.IPv4len*8 {
+		normalizedNetworkIP = network.IP.To4()
+	} else if network.IP.To4() == nil {
+		normalizedNetworkIP = network.IP.To16()
 	}
+	if normalizedNetworkIP == nil {
+		return nil, fmt.Errorf("network IP address does not match the mask")
+	}
+	if !normalizedNetworkIP.Equal(normalizedNetworkIP.Mask(network.Mask)) {
+		return nil, fmt.Errorf("network IP address has host bits set")
+	}
+
+	return &SubnetIterator{
+		isIPv6:         netBitsTotal == net.IPv6len*8,
+		netBitsTotal:   netBitsTotal,
+		prefixSize:     prefixSize,
+		networkIPAsInt: new(big.Int).SetBytes(normalizedNetworkIP),
+		subnetIPCount:  new(big.Int).Exp(big.NewInt(2), big.NewInt(int64(netBitsTotal)-int64(prefixSize)), nil),
+		subnetCount:    new(big.Int).Exp(big.NewInt(2), big.NewInt(int64(prefixSize)-int64(networkOnes)), nil),
+		nextIndex:      big.NewInt(0),
+	}, nil
+}
+
+// Next returns the next prefix, or nil after the iterator is exhausted.
+func (i *SubnetIterator) Next() *net.IPNet {
+	if i == nil || i.nextIndex.Cmp(i.subnetCount) >= 0 {
+		return nil
+	}
+	subnetOffset := new(big.Int).Mul(i.subnetIPCount, i.nextIndex)
+	subnetIPAsInt := new(big.Int).Add(i.networkIPAsInt, subnetOffset)
+	i.nextIndex.Add(i.nextIndex, big.NewInt(1))
+	subnetIP := intToIP(subnetIPAsInt, i.isIPv6)
+	if subnetIP == nil {
+		return nil
+	}
+	return &net.IPNet{IP: subnetIP, Mask: net.CIDRMask(int(i.prefixSize), i.netBitsTotal)}
+}
+
+// AdvancePastIP moves the iterator to the prefix containing the address immediately after end.
+// It never moves the iterator backwards. If end is the last address or beyond the iterator network, the iterator is
+// exhausted.
+func (i *SubnetIterator) AdvancePastIP(end net.IP) error {
+	if i == nil {
+		return fmt.Errorf("invalid subnet iterator")
+	}
+	var normalizedEnd net.IP
+	if i.isIPv6 {
+		if end.To4() == nil {
+			normalizedEnd = end.To16()
+		}
+	} else {
+		normalizedEnd = end.To4()
+	}
+	if normalizedEnd == nil {
+		return fmt.Errorf("IP address family does not match iterator network")
+	}
+	nextIP := NextIP(normalizedEnd)
+	if nextIP == nil {
+		i.nextIndex.Set(i.subnetCount)
+		return nil
+	}
+	distance := new(big.Int).Sub(ipToInt(nextIP), i.networkIPAsInt)
+	if distance.Sign() < 0 {
+		return nil
+	}
+	targetIndex := new(big.Int).Quo(distance, i.subnetIPCount)
+	if targetIndex.Cmp(i.nextIndex) > 0 {
+		i.nextIndex.Set(targetIndex)
+	}
+	if i.nextIndex.Cmp(i.subnetCount) > 0 {
+		i.nextIndex.Set(i.subnetCount)
+	}
+	return nil
 }

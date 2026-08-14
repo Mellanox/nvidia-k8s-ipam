@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"net"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -712,6 +713,62 @@ var _ = Describe("Allocator", func() {
 		})
 
 		// IPv6 tests
+		It("ipv6 - reports exhaustion after a /64-sized excluded suffix", func() {
+			pool := &ipamv1alpha1.IPPool{
+				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "2001:db8::/64",
+					PerNodeBlockSize: 16,
+					Exclusions: []ipamv1alpha1.ExcludeRange{
+						{StartIP: "2001:db8::11", EndIP: "2001:db8::ffff:ffff:ffff:ffff"},
+					},
+				},
+			}
+			a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool, sets.New(testNodeName1, testNodeName2))
+			node1Alloc, err := a.AllocateFromPool(ctx, testNodeName1)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(node1Alloc.StartIP.String()).To(Equal("2001:db8::1"))
+			Expect(node1Alloc.EndIP.String()).To(Equal("2001:db8::10"))
+			_, err = a.AllocateFromPool(ctx, testNodeName2)
+			Expect(err).To(MatchError(allocator.ErrNoFreeRanges))
+		})
+
+		It("ipv6 - skips an exclusion farther than int64 and preserves a usable suffix", func() {
+			pool := &ipamv1alpha1.IPPool{
+				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "2001:db8::/63",
+					PerNodeBlockSize: 16,
+					Exclusions: []ipamv1alpha1.ExcludeRange{
+						{StartIP: "2001:db8::11", EndIP: "2001:db8:0:1::10"},
+					},
+				},
+			}
+			a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool, sets.New(testNodeName1, testNodeName2))
+			_, err := a.AllocateFromPool(ctx, testNodeName1)
+			Expect(err).NotTo(HaveOccurred())
+			node2Alloc, err := a.AllocateFromPool(ctx, testNodeName2)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(node2Alloc.StartIP.String()).To(Equal("2001:db8:0:1::11"))
+			Expect(node2Alloc.EndIP.String()).To(Equal("2001:db8:0:1::20"))
+		})
+
+		It("ipv6 - reports exhaustion when per-node exclusions cover every block", func() {
+			pool := &ipamv1alpha1.IPPool{
+				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
+				Spec: ipamv1alpha1.IPPoolSpec{
+					Subnet:           "2001:db8::/64",
+					PerNodeBlockSize: 16,
+					PerNodeExclusions: []ipamv1alpha1.ExcludeIndexRange{
+						{StartIndex: 0, EndIndex: 15},
+					},
+				},
+			}
+			a := allocator.CreatePoolAllocatorFromIPPool(ctx, pool, sets.New(testNodeName1))
+			_, err := a.AllocateFromPool(ctx, testNodeName1)
+			Expect(err).To(MatchError(allocator.ErrNoFreeRanges))
+		})
+
 		It("ipv6 - single exclusion covering entire first range - skips to next range", func() {
 			pool := &ipamv1alpha1.IPPool{
 				ObjectMeta: v1.ObjectMeta{Name: "test-pool"},
@@ -856,8 +913,12 @@ var _ = Describe("Allocator", func() {
 				nodeName := fmt.Sprintf("node-%d", i)
 				nodeAlloc, err := a.AllocateFromPool(ctx, nodeName)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(nodeAlloc.StartIP.String()).To(Equal(ip.NextIPWithOffset(baseIP, int64(i*10)).String()))
-				Expect(nodeAlloc.EndIP.String()).To(Equal(ip.NextIPWithOffset(baseIP, int64(i*10)+9).String()))
+				expectedStartIP, err := ip.NextIPWithOffset(baseIP, big.NewInt(int64(i*10)))
+				Expect(err).ToNot(HaveOccurred())
+				expectedEndIP, err := ip.NextIPWithOffset(baseIP, big.NewInt(int64(i*10)+9))
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nodeAlloc.StartIP.String()).To(Equal(expectedStartIP.String()))
+				Expect(nodeAlloc.EndIP.String()).To(Equal(expectedEndIP.String()))
 				if i%100 == 0 {
 					GinkgoWriter.Printf("allocated %d nodes\n", i)
 				}

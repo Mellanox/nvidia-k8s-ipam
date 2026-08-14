@@ -15,7 +15,9 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math/big"
 	"net"
 	"reflect"
 	"sort"
@@ -48,6 +50,8 @@ type CIDRPoolReconciler struct {
 	Scheme   *runtime.Scheme
 	recorder record.EventRecorder
 }
+
+var errNoFreePrefixes = errors.New("no free prefixes")
 
 // Reconcile contains logic to sync CIDRPool objects
 func (r *CIDRPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -85,14 +89,24 @@ func (r *CIDRPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	allocationsByNodeName, allocationsByPrefix := r.getValidExistingAllocationsMaps(ctx, pool, nodes)
 	staticAllocationsByNodeName, staticAllocationsByPrefix := r.getStaticAllocationsMaps(pool)
 
-	subnetGenFunc := ip.GetSubnetGen(cidrNetwork, pool.Spec.PerNodeNetworkPrefix)
+	subnetIterator, err := ip.NewSubnetIterator(cidrNetwork, pool.Spec.PerNodeNetworkPrefix)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to create subnet iterator: %w", err)
+	}
+	mergedExclusions := ipamv1alpha1.MergeExcludeRanges(pool.Spec.Exclusions)
+	perNodePrefixFullyExcluded := ipamv1alpha1.ExcludeIndexRangesCover(
+		pool.Spec.PerNodeExclusions, lastUsableIndex(cidrNetwork, pool.Spec.PerNodeNetworkPrefix))
 	for _, node := range nodes {
 		if _, allocationExist := allocationsByNodeName[node]; allocationExist {
 			continue
 		}
 		nodeAlloc := r.getStaticAllocationForNodeIfExist(node, pool, staticAllocationsByNodeName)
 		if nodeAlloc == nil {
-			nodeAlloc = r.getNewAllocationForNode(subnetGenFunc, node, pool, allocationsByPrefix, staticAllocationsByPrefix)
+			nodeAlloc, err = r.getNewAllocationForNode(ctx, subnetIterator, node, pool, allocationsByPrefix,
+				staticAllocationsByPrefix, mergedExclusions, perNodePrefixFullyExcluded)
+			if err != nil && !errors.Is(err, errNoFreePrefixes) {
+				return ctrl.Result{}, err
+			}
 		}
 		if nodeAlloc == nil {
 			msg := fmt.Sprintf("failed to allocated prefix for Node: %s, no free prefixes", node)
@@ -124,14 +138,29 @@ func (r *CIDRPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{}, nil
 }
 
-// create new allocation for the node, returns nil if can't generate a subnet because lack of free prefixes
-func (r *CIDRPoolReconciler) getNewAllocationForNode(subnetGen func() *net.IPNet, node string,
+// getNewAllocationForNode returns errNoFreePrefixes when no prefix is available for the node.
+func (r *CIDRPoolReconciler) getNewAllocationForNode(
+	ctx context.Context,
+	subnetIterator *ip.SubnetIterator,
+	node string,
 	pool *ipamv1alpha1.CIDRPool,
 	allocByPrefix map[string]*ipamv1alpha1.CIDRPoolAllocation,
-	staticAllocByPrefix map[string]*ipamv1alpha1.CIDRPoolStaticAllocation) *ipamv1alpha1.CIDRPoolAllocation {
+	staticAllocByPrefix map[string]*ipamv1alpha1.CIDRPoolStaticAllocation,
+	mergedExclusions []ipamv1alpha1.ExcludeRange,
+	perNodePrefixFullyExcluded bool,
+) (*ipamv1alpha1.CIDRPoolAllocation, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if perNodePrefixFullyExcluded {
+		return nil, errNoFreePrefixes
+	}
 	var nodePrefix *net.IPNet
 	for {
-		nodePrefix = subnetGen()
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		nodePrefix = subnetIterator.Next()
 		if nodePrefix == nil {
 			break
 		}
@@ -146,13 +175,19 @@ func (r *CIDRPoolReconciler) getNewAllocationForNode(subnetGen func() *net.IPNet
 
 		// skip prefix if it is fully excluded
 		if r.isPrefixFullyExcluded(nodePrefix.String(), pool) {
+			exclusionEnd := overlappingExclusionEnd(nodePrefix, mergedExclusions)
+			if exclusionEnd != nil {
+				if err := subnetIterator.AdvancePastIP(exclusionEnd); err != nil {
+					return nil, fmt.Errorf("failed to skip excluded prefixes: %w", err)
+				}
+			}
 			continue
 		}
 
 		break
 	}
 	if nodePrefix == nil {
-		return nil
+		return nil, errNoFreePrefixes
 	}
 	gateway := ""
 	if pool.Spec.GatewayIndex != nil {
@@ -162,7 +197,43 @@ func (r *CIDRPoolReconciler) getNewAllocationForNode(subnetGen func() *net.IPNet
 		NodeName: node,
 		Prefix:   nodePrefix.String(),
 		Gateway:  gateway,
+	}, nil
+}
+
+// lastUsableIndex returns the last address index considered by isPrefixFullyExcluded for each generated prefix.
+func lastUsableIndex(parent *net.IPNet, prefixSize int32) *big.Int {
+	_, totalBits := parent.Mask.Size()
+	hostBits := int64(totalBits) - int64(prefixSize)
+	lastIndex := new(big.Int).Sub(
+		new(big.Int).Exp(big.NewInt(2), big.NewInt(hostBits), nil), big.NewInt(1))
+	if parent.IP.To4() != nil && hostBits > 1 {
+		// LastIP excludes the broadcast address for ordinary IPv4 prefixes.
+		lastIndex.Sub(lastIndex, big.NewInt(1))
 	}
+	return lastIndex
+}
+
+// overlappingExclusionEnd returns the furthest end of a global exclusion intersecting prefix.
+// The caller uses it only after the prefix is known to be fully excluded, so advancing to this endpoint cannot skip
+// a usable prefix. The boundary prefix is evaluated normally when the exclusion ends partway through it.
+func overlappingExclusionEnd(prefix *net.IPNet, exclusions []ipamv1alpha1.ExcludeRange) net.IP {
+	firstIP := prefix.IP
+	lastIP := ip.LastIP(prefix)
+	var furthestEnd net.IP
+	for _, exclusion := range exclusions {
+		startIP := net.ParseIP(exclusion.StartIP)
+		endIP := net.ParseIP(exclusion.EndIP)
+		if startIP == nil || endIP == nil || ip.Cmp(endIP, firstIP) < 0 {
+			continue
+		}
+		if ip.Cmp(startIP, lastIP) > 0 {
+			break
+		}
+		if furthestEnd == nil || ip.Cmp(endIP, furthestEnd) > 0 {
+			furthestEnd = endIP
+		}
+	}
+	return furthestEnd
 }
 
 // builds CIDRPoolAllocation from the CIDRPoolStaticAllocation if it exist for the node
