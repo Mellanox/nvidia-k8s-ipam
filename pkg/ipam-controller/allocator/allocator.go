@@ -17,7 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
+	"math/big"
 	"net"
 	"reflect"
 
@@ -83,6 +83,15 @@ func (pa *PoolAllocator) AllocateFromPool(ctx context.Context, node string) (*Al
 			"start", existingAlloc.StartIP, "end", existingAlloc.EndIP)
 		return &existingAlloc, nil
 	}
+	if pa.cfg.PerNodeBlockSize <= 0 {
+		return &AllocatedRange{}, fmt.Errorf("per-node block size must be positive")
+	}
+	blockSize := big.NewInt(int64(pa.cfg.PerNodeBlockSize))
+	lastBlockIndex := new(big.Int).Sub(new(big.Int).Set(blockSize), big.NewInt(1))
+	if ipamv1alpha1.ExcludeIndexRangesCover(pa.cfg.PerNodeExclusions, lastBlockIndex) {
+		log.Info("can't allocate: every per-node block is fully excluded")
+		return &AllocatedRange{}, ErrNoFreeRanges
+	}
 
 	// determine the next possible range for the subnet
 	var startIP net.IP
@@ -91,28 +100,35 @@ func (pa *PoolAllocator) AllocateFromPool(ctx context.Context, node string) (*Al
 	if pa.lastAllocatedStartIP == nil {
 		startIP = pa.getFirstStartIP()
 	} else {
-		startIP = ip.NextIPWithOffset(pa.lastAllocatedStartIP, int64(pa.cfg.PerNodeBlockSize))
+		startIP = nextIPWithOffsetOrNil(pa.lastAllocatedStartIP, blockSize)
 	}
-	endIP = ip.NextIPWithOffset(startIP, int64(pa.cfg.PerNodeBlockSize)-1)
+	endIP = nextIPWithOffsetOrNil(startIP, lastBlockIndex)
 
 	for pa.allocationValid(startIP, endIP) {
+		if err := ctx.Err(); err != nil {
+			return &AllocatedRange{}, err
+		}
 		// check if the range is allocated i.e its present in startIPs
 		if pa.startIps.Has(startIP.String()) {
 			startIP = ip.NextIP(endIP)
-			endIP = ip.NextIPWithOffset(startIP, int64(pa.cfg.PerNodeBlockSize)-1)
+			endIP = nextIPWithOffsetOrNil(startIP, lastBlockIndex)
 			continue
 		}
 
 		// check if the entire range is excluded
 		if pa.isEntireRangeExcluded(AllocatedRange{StartIP: startIP, EndIP: endIP}) {
-			startIP, endIP = pa.getNextNonExcludedCandidates(startIP, endIP)
+			var err error
+			startIP, endIP, err = pa.getNextNonExcludedCandidates(startIP, endIP)
+			if err != nil {
+				return &AllocatedRange{}, fmt.Errorf("failed to skip excluded range: %w", err)
+			}
 			continue
 		}
 
 		// if perNodeBlockSize is 1, we should not allocate the gateway
 		if pa.cfg.PerNodeBlockSize == 1 && pa.cfg.Gateway != nil && startIP.Equal(pa.cfg.Gateway) {
 			startIP = ip.NextIP(endIP)
-			endIP = ip.NextIPWithOffset(startIP, int64(pa.cfg.PerNodeBlockSize)-1)
+			endIP = nextIPWithOffsetOrNil(startIP, lastBlockIndex)
 			continue
 		}
 
@@ -138,17 +154,28 @@ func (pa *PoolAllocator) AllocateFromPool(ctx context.Context, node string) (*Al
 	return &a, nil
 }
 
+func nextIPWithOffsetOrNil(address net.IP, offset *big.Int) net.IP {
+	nextIP, err := ip.NextIPWithOffset(address, offset)
+	if err != nil {
+		return nil
+	}
+	return nextIP
+}
+
 // getNextNonExcludedCandidates returns the next non excluded start and end IP candidates
-func (pa *PoolAllocator) getNextNonExcludedCandidates(currentStartIP net.IP, currentEndIP net.IP) (net.IP, net.IP) {
+func (pa *PoolAllocator) getNextNonExcludedCandidates(
+	currentStartIP net.IP, currentEndIP net.IP,
+) (net.IP, net.IP, error) {
 	if currentStartIP == nil || currentEndIP == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	// the next start and end IP candidates start from currentEndIP +1
 	nextStartIP := ip.NextIP(currentEndIP)
-	nextEndIP := ip.NextIPWithOffset(nextStartIP, int64(pa.cfg.PerNodeBlockSize)-1)
+	lastBlockIndex := big.NewInt(int64(pa.cfg.PerNodeBlockSize) - 1)
+	nextEndIP := nextIPWithOffsetOrNil(nextStartIP, lastBlockIndex)
 	if nextStartIP == nil || nextEndIP == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	// merge exclude ranges
@@ -164,21 +191,29 @@ func (pa *PoolAllocator) getNextNonExcludedCandidates(currentStartIP net.IP, cur
 		// that IP is for sure not excluded because if it was, it would have been included in the merged exclude ranges.
 		nextFreeIP := ip.NextIP(net.ParseIP(excludeRange.EndIP))
 		if nextFreeIP == nil {
-			return nil, nil
+			return nil, nil, nil
 		}
 
 		// align it to the nearest block size boundary and return the next candidate start and end IPs
-		distance := ip.Distance(nextStartIP, nextFreeIP)
-		ipsToSkip := (distance / int64(pa.cfg.PerNodeBlockSize)) * int64(pa.cfg.PerNodeBlockSize)
+		distance, err := ip.Distance(nextStartIP, nextFreeIP)
+		if err != nil {
+			return nil, nil, err
+		}
+		blockSize := big.NewInt(int64(pa.cfg.PerNodeBlockSize))
+		blocksToSkip := new(big.Int).Quo(distance, blockSize)
+		ipsToSkip := new(big.Int).Mul(blocksToSkip, blockSize)
 
-		nextStartIP = ip.NextIPWithOffset(nextStartIP, ipsToSkip)
-		nextEndIP = ip.NextIPWithOffset(nextStartIP, int64(pa.cfg.PerNodeBlockSize)-1)
-		return nextStartIP, nextEndIP
+		nextStartIP, err = ip.NextIPWithOffset(nextStartIP, ipsToSkip)
+		if err != nil {
+			return nil, nil, err
+		}
+		nextEndIP = nextIPWithOffsetOrNil(nextStartIP, lastBlockIndex)
+		return nextStartIP, nextEndIP, nil
 	}
 
 	// if we reach this point then startIP and endIP are not fully contained in any of the exclude ranges
 	// so they can be used as candidates for allocation
-	return nextStartIP, nextEndIP
+	return nextStartIP, nextEndIP, nil
 }
 
 // allocationValid checks if the allocation is valid
@@ -220,27 +255,43 @@ func (pa *PoolAllocator) load(ctx context.Context, nodeName string, allocRange A
 }
 
 func (pa *PoolAllocator) checkAllocation(allocRange AllocatedRange) error {
+	if pa.cfg.PerNodeBlockSize <= 0 {
+		return fmt.Errorf("per-node block size must be positive")
+	}
 	if !pa.cfg.Subnet.Contains(allocRange.StartIP) || !pa.cfg.Subnet.Contains(allocRange.EndIP) {
 		return fmt.Errorf("invalid allocation allocators: start or end IP is out of the subnet")
 	}
 	if ip.Cmp(allocRange.EndIP, allocRange.StartIP) < 0 {
 		return fmt.Errorf("invalid allocation allocators: start IP must be less or equal to end IP")
 	}
-	distanceFromNetworkStart := ip.Distance(pa.cfg.Subnet.IP, allocRange.StartIP)
+	distanceFromNetworkStart, err := ip.Distance(pa.cfg.Subnet.IP, allocRange.StartIP)
+	if err != nil {
+		return fmt.Errorf("failed to calculate allocation offset: %w", err)
+	}
+	blockSize := big.NewInt(int64(pa.cfg.PerNodeBlockSize))
+	allocationOffset := new(big.Int).Set(distanceFromNetworkStart)
 	// check that StartIP of the range has valid offset.
 	// all ranges have same size, so we can simply check that (StartIP offset) % pa.cfg.PerNodeBlockSize == 0
 	if pa.canUseNetworkAddress() {
-		if math.Mod(float64(distanceFromNetworkStart), float64(pa.cfg.PerNodeBlockSize)) != 0 {
+		if new(big.Int).Mod(allocationOffset, blockSize).Sign() != 0 {
 			return fmt.Errorf("invalid start IP offset")
 		}
 	} else {
-		if distanceFromNetworkStart < 1 ||
-			// -1 required because we skip network address (e.g. in 192.168.0.0/24, first allocation will be 192.168.0.1)
-			math.Mod(float64(distanceFromNetworkStart)-1, float64(pa.cfg.PerNodeBlockSize)) != 0 {
+		if distanceFromNetworkStart.Sign() < 1 {
+			return fmt.Errorf("invalid start IP offset")
+		}
+		allocationOffset.Sub(allocationOffset, big.NewInt(1))
+		// -1 required because we skip network address (e.g. in 192.168.0.0/24, first allocation will be 192.168.0.1)
+		if new(big.Int).Mod(allocationOffset, blockSize).Sign() != 0 {
 			return fmt.Errorf("invalid start IP offset")
 		}
 	}
-	if ip.Distance(allocRange.StartIP, allocRange.EndIP) != int64(pa.cfg.PerNodeBlockSize)-1 {
+	allocationSize, err := ip.Distance(allocRange.StartIP, allocRange.EndIP)
+	if err != nil {
+		return fmt.Errorf("failed to calculate allocation size: %w", err)
+	}
+	expectedAllocationSize := new(big.Int).Sub(new(big.Int).Set(blockSize), big.NewInt(1))
+	if allocationSize.Cmp(expectedAllocationSize) != 0 {
 		return fmt.Errorf("ip count mismatch")
 	}
 	// for single IP ranges we need to discard allocation if it matches the gateway

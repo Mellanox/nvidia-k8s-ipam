@@ -15,6 +15,7 @@
 package ip
 
 import (
+	"math/big"
 	"net"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -69,92 +70,147 @@ var _ = Describe("CIDR functions", func() {
 
 	It("NextIPWithOffset", func() {
 		testCases := []struct {
-			ip     net.IP
-			offset int64
-			nextIP net.IP
+			ip          net.IP
+			offset      *big.Int
+			nextIP      net.IP
+			expectError bool
 		}{
 			{
 				[]byte{192, 0, 2},
-				10,
+				big.NewInt(10),
 				nil,
+				true,
 			},
 			{
 				net.ParseIP("192.168.0.1"),
-				10,
+				big.NewInt(10),
 				net.IPv4(192, 168, 0, 11).To4(),
+				false,
 			},
 			{
 				net.ParseIP("192.168.0.254"),
-				10,
+				big.NewInt(10),
 				net.IPv4(192, 168, 1, 8).To4(),
+				false,
 			},
 			{
 				net.ParseIP("192.168.0.254"),
-				-10,
+				big.NewInt(-10),
 				nil,
+				true,
 			},
 			{
 				net.ParseIP("0::123"),
-				3,
+				big.NewInt(3),
 				net.ParseIP("0::126"),
+				false,
 			},
 			{
 				net.ParseIP("AB12::FFFF"),
-				3,
+				big.NewInt(3),
 				net.ParseIP("AB12::1:2"),
+				false,
+			},
+			{
+				net.ParseIP("192.168.0.1"),
+				nil,
+				nil,
+				true,
 			},
 		}
 
 		for _, test := range testCases {
-			ip := NextIPWithOffset(test.ip, test.offset)
+			nextIP, err := NextIPWithOffset(test.ip, test.offset)
+			if test.expectError {
+				Expect(err).To(HaveOccurred())
+				Expect(nextIP).To(BeNil())
+				continue
+			}
 
-			Expect(ip).To(Equal(test.nextIP))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(nextIP).To(Equal(test.nextIP))
 		}
 	})
 
 	It("Distance", func() {
 		testCases := []struct {
-			ipA   net.IP
-			ipB   net.IP
-			count int64
+			ipA         net.IP
+			ipB         net.IP
+			count       int64
+			expectError bool
 		}{
 			{
 				net.ParseIP("192.168.0.1"),
 				net.ParseIP("192.168.0.11"),
 				10,
+				false,
 			},
 			{
 				net.ParseIP("192.168.0.2"),
 				net.ParseIP("192.168.0.2"),
 				0,
+				false,
 			},
 			{
 				net.ParseIP("AB12::FFFF"),
 				net.ParseIP("AB12::1:2"),
 				3,
+				false,
 			},
 			{
 				net.ParseIP("192.168.0.11"),
 				net.ParseIP("192.168.0.1"),
-				-1,
+				0,
+				true,
 			},
 			{
 				net.ParseIP("192.168.0.11"),
 				[]byte{192, 0, 2},
-				-2,
+				0,
+				true,
 			},
 			{
 				net.ParseIP("192.168.0.11"),
 				net.ParseIP("AB12::FFFF"),
-				-2,
+				0,
+				true,
 			},
 		}
 
 		for _, test := range testCases {
-			ip := Distance(test.ipA, test.ipB)
+			distance, err := Distance(test.ipA, test.ipB)
+			if test.expectError {
+				Expect(err).To(HaveOccurred())
+				Expect(distance).To(BeNil())
+				continue
+			}
 
-			Expect(ip).To(Equal(test.count))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(distance.Cmp(big.NewInt(test.count))).To(BeZero())
 		}
+	})
+
+	It("Distance and NextIPWithOffset support distances larger than int64", func() {
+		start := net.ParseIP("2001:db8::11")
+		end := net.ParseIP("2001:db8:0:1::11")
+		expected := new(big.Int).Lsh(big.NewInt(1), 64)
+
+		distance, err := Distance(start, end)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(distance).To(Equal(expected))
+
+		result, err := NextIPWithOffset(start, distance)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(Equal(end))
+	})
+
+	It("exact address arithmetic rejects invalid operations", func() {
+		_, err := Distance(net.ParseIP("2001:db8::1"), net.ParseIP("192.0.2.1"))
+		Expect(err).To(HaveOccurred())
+		_, err = Distance(net.ParseIP("2001:db8::2"), net.ParseIP("2001:db8::1"))
+		Expect(err).To(HaveOccurred())
+		_, err = NextIPWithOffset(net.ParseIP("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"), big.NewInt(1))
+		Expect(err).To(HaveOccurred())
 	})
 
 	It("PrevIP", func() {
@@ -336,82 +392,133 @@ var _ = Describe("CIDR functions", func() {
 		}
 	})
 
-	Context("GetSubnetGen", func() {
-		It("Invalid args - prefix is larger then network", func() {
-			_, net, _ := net.ParseCIDR("192.168.0.0/16")
-			gen := GetSubnetGen(net, 8)
-			Expect(gen).NotTo(BeNil())
-			Expect(gen()).To(BeNil())
+	Context("NewSubnetIterator", func() {
+		It("rejects a prefix shorter than the network prefix", func() {
+			_, network, err := net.ParseCIDR("192.168.0.0/16")
+			Expect(err).NotTo(HaveOccurred())
+			iterator, err := NewSubnetIterator(network, 8)
+			Expect(err).To(HaveOccurred())
+			Expect(iterator).To(BeNil())
 		})
-		It("Invalid args - prefix is too small for IPv4", func() {
-			_, net, _ := net.ParseCIDR("192.168.0.0/16")
-			gen := GetSubnetGen(net, 120)
-			Expect(gen).NotTo(BeNil())
-			Expect(gen()).To(BeNil())
+		It("rejects a prefix longer than the address width", func() {
+			_, network, err := net.ParseCIDR("192.168.0.0/16")
+			Expect(err).NotTo(HaveOccurred())
+			iterator, err := NewSubnetIterator(network, 120)
+			Expect(err).To(HaveOccurred())
+			Expect(iterator).To(BeNil())
+		})
+		It("rejects invalid network input", func() {
+			iterator, err := NewSubnetIterator(nil, 24)
+			Expect(err).To(HaveOccurred())
+			Expect(iterator).To(BeNil())
+
+			iterator, err = NewSubnetIterator(&net.IPNet{
+				IP:   net.ParseIP("192.168.0.0"),
+				Mask: net.IPMask{0xff, 0x00, 0xff, 0x00},
+			}, 24)
+			Expect(err).To(HaveOccurred())
+			Expect(iterator).To(BeNil())
+		})
+		It("rejects an IP address that does not match the mask family", func() {
+			iterator, err := NewSubnetIterator(&net.IPNet{
+				IP:   net.ParseIP("2001:db8::"),
+				Mask: net.CIDRMask(24, 32),
+			}, 24)
+			Expect(err).To(HaveOccurred())
+			Expect(iterator).To(BeNil())
 		})
 		It("Valid - single subnet IPv4", func() {
-			_, net, _ := net.ParseCIDR("192.168.0.0/24")
-			gen := GetSubnetGen(net, 24)
-			Expect(gen).NotTo(BeNil())
-			Expect(gen().String()).To(Equal("192.168.0.0/24"))
-			Expect(gen()).To(BeNil())
+			_, network, err := net.ParseCIDR("192.168.0.0/24")
+			Expect(err).NotTo(HaveOccurred())
+			iterator, err := NewSubnetIterator(network, 24)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(iterator.Next().String()).To(Equal("192.168.0.0/24"))
+			Expect(iterator.Next()).To(BeNil())
 		})
 		It("Valid - single subnet IPv6", func() {
-			_, net, _ := net.ParseCIDR("2002:0:0:1234::/64")
-			gen := GetSubnetGen(net, 64)
-			Expect(gen).NotTo(BeNil())
-			Expect(gen().String()).To(Equal("2002:0:0:1234::/64"))
-			Expect(gen()).To(BeNil())
+			_, network, err := net.ParseCIDR("2002:0:0:1234::/64")
+			Expect(err).NotTo(HaveOccurred())
+			iterator, err := NewSubnetIterator(network, 64)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(iterator.Next().String()).To(Equal("2002:0:0:1234::/64"))
+			Expect(iterator.Next()).To(BeNil())
 		})
 		It("valid - IPv4", func() {
-			_, net, _ := net.ParseCIDR("192.168.4.0/23")
-			gen := GetSubnetGen(net, 25)
-			Expect(gen).NotTo(BeNil())
-			Expect(gen().String()).To(Equal("192.168.4.0/25"))
-			Expect(gen().String()).To(Equal("192.168.4.128/25"))
-			Expect(gen().String()).To(Equal("192.168.5.0/25"))
-			Expect(gen().String()).To(Equal("192.168.5.128/25"))
-			Expect(gen()).To(BeNil())
+			_, network, err := net.ParseCIDR("192.168.4.0/23")
+			Expect(err).NotTo(HaveOccurred())
+			iterator, err := NewSubnetIterator(network, 25)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(iterator.Next().String()).To(Equal("192.168.4.0/25"))
+			Expect(iterator.Next().String()).To(Equal("192.168.4.128/25"))
+			Expect(iterator.Next().String()).To(Equal("192.168.5.0/25"))
+			Expect(iterator.Next().String()).To(Equal("192.168.5.128/25"))
+			Expect(iterator.Next()).To(BeNil())
 		})
 		It("valid - IPv6", func() {
-			_, net, _ := net.ParseCIDR("2002:0:0:1234::/64")
-			gen := GetSubnetGen(net, 124)
-			Expect(gen).NotTo(BeNil())
-			Expect(gen().String()).To(Equal("2002:0:0:1234::/124"))
-			Expect(gen().String()).To(Equal("2002:0:0:1234::10/124"))
-			Expect(gen().String()).To(Equal("2002:0:0:1234::20/124"))
+			_, network, err := net.ParseCIDR("2002:0:0:1234::/64")
+			Expect(err).NotTo(HaveOccurred())
+			iterator, err := NewSubnetIterator(network, 124)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(iterator.Next().String()).To(Equal("2002:0:0:1234::/124"))
+			Expect(iterator.Next().String()).To(Equal("2002:0:0:1234::10/124"))
+			Expect(iterator.Next().String()).To(Equal("2002:0:0:1234::20/124"))
 		})
 		It("valid - large IPv6 subnet (overflow test)", func() {
-			_, net, _ := net.ParseCIDR("::/0")
-			gen := GetSubnetGen(net, 127)
-			Expect(gen).NotTo(BeNil())
-			Expect(gen().String()).To(Equal("::/127"))
-			Expect(gen().String()).To(Equal("::2/127"))
-			Expect(gen().String()).To(Equal("::4/127"))
+			_, network, err := net.ParseCIDR("::/0")
+			Expect(err).NotTo(HaveOccurred())
+			iterator, err := NewSubnetIterator(network, 127)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(iterator.Next().String()).To(Equal("::/127"))
+			Expect(iterator.Next().String()).To(Equal("::2/127"))
+			Expect(iterator.Next().String()).To(Equal("::4/127"))
 		})
 		It("valid - single IP IPv4 subnet", func() {
-			_, net, _ := net.ParseCIDR("192.168.0.0/16")
-			gen := GetSubnetGen(net, 32)
-			Expect(gen).NotTo(BeNil())
-			Expect(gen().String()).To(Equal("192.168.0.0/32"))
-			Expect(gen().String()).To(Equal("192.168.0.1/32"))
-			Expect(gen().String()).To(Equal("192.168.0.2/32"))
+			_, network, err := net.ParseCIDR("192.168.0.0/16")
+			Expect(err).NotTo(HaveOccurred())
+			iterator, err := NewSubnetIterator(network, 32)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(iterator.Next().String()).To(Equal("192.168.0.0/32"))
+			Expect(iterator.Next().String()).To(Equal("192.168.0.1/32"))
+			Expect(iterator.Next().String()).To(Equal("192.168.0.2/32"))
 		})
 		It("valid - single IP IPv6 subnet", func() {
-			_, net, _ := net.ParseCIDR("2002:0:0:1234::/64")
-			gen := GetSubnetGen(net, 128)
-			Expect(gen).NotTo(BeNil())
-			Expect(gen().String()).To(Equal("2002:0:0:1234::/128"))
-			Expect(gen().String()).To(Equal("2002:0:0:1234::1/128"))
-			Expect(gen().String()).To(Equal("2002:0:0:1234::2/128"))
+			_, network, err := net.ParseCIDR("2002:0:0:1234::/64")
+			Expect(err).NotTo(HaveOccurred())
+			iterator, err := NewSubnetIterator(network, 128)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(iterator.Next().String()).To(Equal("2002:0:0:1234::/128"))
+			Expect(iterator.Next().String()).To(Equal("2002:0:0:1234::1/128"))
+			Expect(iterator.Next().String()).To(Equal("2002:0:0:1234::2/128"))
 		})
 		It("valid - single IP IPv4 subnet, point to point network", func() {
-			_, net, _ := net.ParseCIDR("192.168.0.0/31")
-			gen := GetSubnetGen(net, 32)
-			Expect(gen).NotTo(BeNil())
-			Expect(gen().String()).To(Equal("192.168.0.0/32"))
-			Expect(gen().String()).To(Equal("192.168.0.1/32"))
-			Expect(gen()).To(BeNil())
+			_, network, err := net.ParseCIDR("192.168.0.0/31")
+			Expect(err).NotTo(HaveOccurred())
+			iterator, err := NewSubnetIterator(network, 32)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(iterator.Next().String()).To(Equal("192.168.0.0/32"))
+			Expect(iterator.Next().String()).To(Equal("192.168.0.1/32"))
+			Expect(iterator.Next()).To(BeNil())
+		})
+	})
+	Context("SubnetIterator.AdvancePastIP", func() {
+		It("advances across an exhausted IPv6 /64 in constant time", func() {
+			_, network, err := net.ParseCIDR("2001:db8::/64")
+			Expect(err).NotTo(HaveOccurred())
+			iterator, err := NewSubnetIterator(network, 128)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(iterator.Next().String()).To(Equal("2001:db8::/128"))
+			Expect(iterator.AdvancePastIP(net.ParseIP("2001:db8::ffff:ffff:ffff:ffff"))).To(Succeed())
+			Expect(iterator.Next()).To(BeNil())
+		})
+
+		It("reevaluates the prefix containing an exclusion boundary", func() {
+			_, network, err := net.ParseCIDR("2001:db8::/120")
+			Expect(err).NotTo(HaveOccurred())
+			iterator, err := NewSubnetIterator(network, 124)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(iterator.Next().String()).To(Equal("2001:db8::/124"))
+			Expect(iterator.AdvancePastIP(net.ParseIP("2001:db8::24"))).To(Succeed())
+			Expect(iterator.Next().String()).To(Equal("2001:db8::20/124"))
 		})
 	})
 	Context("IsPointToPointSubnet", func() {

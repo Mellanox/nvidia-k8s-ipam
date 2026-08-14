@@ -43,8 +43,8 @@ func GetGatewayForSubnet(subnet *net.IPNet, index int32) string {
 		// index too large
 		return ""
 	}
-	gwIP := ip.NextIPWithOffset(subnet.IP, int64(index))
-	if gwIP == nil {
+	gwIP, err := ip.NextIPWithOffset(subnet.IP, big.NewInt(int64(index)))
+	if err != nil {
 		return ""
 	}
 	return gwIP.String()
@@ -87,12 +87,12 @@ func ExcludeIndexRangeToExcludeRange(excludeIndexRanges []ExcludeIndexRange, sta
 
 	excludeRanges := make([]ExcludeRange, 0, len(excludeIndexRanges))
 	for _, excludeIndexRange := range excludeIndexRanges {
-		excludeRangeStart := ip.NextIPWithOffset(rangeStart, int64(excludeIndexRange.StartIndex))
-		if excludeRangeStart == nil {
+		excludeRangeStart, err := ip.NextIPWithOffset(rangeStart, big.NewInt(int64(excludeIndexRange.StartIndex)))
+		if err != nil {
 			continue
 		}
-		excludeRangeEnd := ip.NextIPWithOffset(rangeStart, int64(excludeIndexRange.EndIndex))
-		if excludeRangeEnd == nil {
+		excludeRangeEnd, err := ip.NextIPWithOffset(rangeStart, big.NewInt(int64(excludeIndexRange.EndIndex)))
+		if err != nil {
 			continue
 		}
 
@@ -101,6 +101,40 @@ func ExcludeIndexRangeToExcludeRange(excludeIndexRanges []ExcludeIndexRange, sta
 	}
 
 	return excludeRanges
+}
+
+// ExcludeIndexRangesCover reports whether exclusions cover every index from zero through lastIndex, inclusive.
+func ExcludeIndexRangesCover(exclusions []ExcludeIndexRange, lastIndex *big.Int) bool {
+	if lastIndex == nil || lastIndex.Sign() < 0 || len(exclusions) == 0 {
+		return false
+	}
+
+	ranges := append([]ExcludeIndexRange(nil), exclusions...)
+	sort.Slice(ranges, func(i, j int) bool {
+		if ranges[i].StartIndex == ranges[j].StartIndex {
+			return ranges[i].EndIndex < ranges[j].EndIndex
+		}
+		return ranges[i].StartIndex < ranges[j].StartIndex
+	})
+
+	coveredThrough := big.NewInt(-1)
+	for _, excludeRange := range ranges {
+		if excludeRange.StartIndex < 0 || excludeRange.EndIndex < excludeRange.StartIndex {
+			return false
+		}
+		nextUncovered := new(big.Int).Add(coveredThrough, big.NewInt(1))
+		if big.NewInt(int64(excludeRange.StartIndex)).Cmp(nextUncovered) > 0 {
+			return false
+		}
+		end := big.NewInt(int64(excludeRange.EndIndex))
+		if end.Cmp(coveredThrough) > 0 {
+			coveredThrough.Set(end)
+		}
+		if coveredThrough.Cmp(lastIndex) >= 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // ClampExcludeRange clamps the exclusion range to the provided startIP and endIP range.

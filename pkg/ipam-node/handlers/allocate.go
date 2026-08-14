@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"net"
 	"slices"
 	"time"
@@ -160,7 +161,12 @@ func (h *Handlers) allocateInPool(poolName string, reqLog logr.Logger,
 		}
 
 		if params.Features.AllocateIpWithIndex != nil {
-			selectedIP := ip.NextIPWithOffset(rangeStart, int64(*params.Features.AllocateIpWithIndex))
+			selectedIP, err := ip.NextIPWithOffset(
+				rangeStart, big.NewInt(int64(*params.Features.AllocateIpWithIndex)))
+			if err != nil {
+				return PoolAlloc{}, status.Errorf(codes.InvalidArgument,
+					"requested IP index \"%d\" is outside of the given chunk", *params.Features.AllocateIpWithIndex)
+			}
 			if selectedIP.Equal(gateway) {
 				return PoolAlloc{}, status.Errorf(codes.InvalidArgument,
 					"requested IP index \"%d\" is the actual gateway, "+
