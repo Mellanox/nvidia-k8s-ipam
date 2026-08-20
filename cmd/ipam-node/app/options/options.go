@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"time"
 
 	cliflag "k8s.io/component-base/cli/flag"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -31,6 +32,11 @@ const (
 	// DefaultStoreFile contains path of the default store file
 	DefaultStoreFile   = "/var/lib/cni/nv-ipam/store"
 	DefaultBindAddress = cniTypes.DefaultDaemonSocket
+	// DefaultStaleIPCheckInterval contains default delay between checks for stale allocations
+	DefaultStaleIPCheckInterval = time.Minute
+	// DefaultStaleIPCheckCountBeforeRelease contains default number of checks to do before
+	// an allocation with no matching Pod is released
+	DefaultStaleIPCheckCountBeforeRelease = 3
 )
 
 // New initialize and return new Options object
@@ -44,16 +50,18 @@ func New() *Options {
 		StoreFile:      DefaultStoreFile,
 		PoolsNamespace: "kube-system",
 		// shim CNI parameters
-		CNIBinDir:                   "/opt/cni/bin",
-		CNIBinFile:                  "/nv-ipam",
-		CNISkipBinFileCopy:          false,
-		CNISkipConfigCreation:       false,
-		CNIDaemonSocket:             cniTypes.DefaultDaemonSocket,
-		CNIDaemonCallTimeoutSeconds: 5,
-		CNIConfDir:                  cniTypes.DefaultConfDir,
-		CNILogLevel:                 cniTypes.DefaultLogLevel,
-		CNILogFile:                  cniTypes.DefaultLogFile,
-		CNIForcePoolName:            false,
+		CNIBinDir:                      "/opt/cni/bin",
+		CNIBinFile:                     "/nv-ipam",
+		CNISkipBinFileCopy:             false,
+		CNISkipConfigCreation:          false,
+		CNIDaemonSocket:                cniTypes.DefaultDaemonSocket,
+		CNIDaemonCallTimeoutSeconds:    5,
+		CNIConfDir:                     cniTypes.DefaultConfDir,
+		CNILogLevel:                    cniTypes.DefaultLogLevel,
+		CNILogFile:                     cniTypes.DefaultLogFile,
+		CNIForcePoolName:               false,
+		StaleIPCheckInterval:           DefaultStaleIPCheckInterval,
+		StaleIPCheckCountBeforeRelease: DefaultStaleIPCheckCountBeforeRelease,
 	}
 }
 
@@ -77,6 +85,9 @@ type Options struct {
 	CNILogFile                  string
 	CNILogLevel                 string
 	CNIForcePoolName            bool
+	// stale IP allocations cleanup
+	StaleIPCheckInterval           time.Duration
+	StaleIPCheckCountBeforeRelease int
 }
 
 // AddNamedFlagSets register flags for common options in NamedFlagSets
@@ -101,6 +112,16 @@ func (o *Options) AddNamedFlagSets(sharedFS *cliflag.NamedFlagSets) {
 		"GPRC server bind address. e.g.: tcp://127.0.0.1:9092, unix:///var/lib/foo")
 	daemonFS.StringVar(&o.StoreFile, "store-file", o.StoreFile,
 		"Path of the file which used to store allocations")
+	daemonFS.DurationVar(&o.StaleIPCheckInterval, "stale-ip-check-interval", o.StaleIPCheckInterval,
+		"Delay between checks for stale IP allocations (allocations with no matching Pod)")
+	daemonFS.IntVar(&o.StaleIPCheckCountBeforeRelease, "stale-ip-check-count-before-release",
+		o.StaleIPCheckCountBeforeRelease,
+		"Number of consecutive failed checks before a stale IP allocation is released. "+
+			"Together with stale-ip-check-interval this defines the effective TTL: "+
+			"since checks happen every stale-ip-check-interval and a check only starts "+
+			"counting once it observes a missing Pod, an allocation may remain without a "+
+			"matching Pod for up to roughly stale-ip-check-interval * "+
+			"(stale-ip-check-count-before-release + 1) before it is released")
 
 	cniFS := sharedFS.FlagSet("Shim CNI Configuration")
 	cniFS.StringVar(&o.CNIBinDir,
@@ -136,6 +157,12 @@ func (o *Options) Validate() error {
 	_, _, err := ParseBindAddress(o.BindAddress)
 	if err != nil {
 		return fmt.Errorf("bind-address is invalid: %v", err)
+	}
+	if o.StaleIPCheckInterval <= 0 {
+		return fmt.Errorf("stale-ip-check-interval must be a positive duration")
+	}
+	if o.StaleIPCheckCountBeforeRelease < 1 {
+		return fmt.Errorf("stale-ip-check-count-before-release must be at least 1")
 	}
 	if err := o.verifyPaths(); err != nil {
 		return err
