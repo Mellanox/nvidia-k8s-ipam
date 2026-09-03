@@ -43,11 +43,17 @@ type Cleaner interface {
 }
 
 // New creates and initialize new cleaner instance
-// "checkInterval" defines delay between checks for stale allocations.
+// "checkInterval" defines delay between checks for stale allocations. It also defines
+// how often reservations pending the release cooldown are checked for expiry.
 // "checkCountBeforeRelease: defines how many check to do before remove the allocation
+// "releaseCooldown" defines the minimum time a released reservation (IsReleased() == true)
+// is kept in the store before the cleaner removes it, freeing its IP for reuse. A value
+// <= 0 disables the cooldown check (released reservations are expected to have already
+// been removed immediately by the caller in that case).
 func New(cachedClient client.Client, directClient client.Client, store storePkg.Store, poolConfReader pool.ConfigReader,
 	checkInterval time.Duration,
-	checkCountBeforeRelease int) Cleaner {
+	checkCountBeforeRelease int,
+	releaseCooldown time.Duration) Cleaner {
 	return &cleaner{
 		cachedClient:            cachedClient,
 		directClient:            directClient,
@@ -55,6 +61,7 @@ func New(cachedClient client.Client, directClient client.Client, store storePkg.
 		poolConfReader:          poolConfReader,
 		checkInterval:           checkInterval,
 		checkCountBeforeRelease: checkCountBeforeRelease,
+		releaseCooldown:         releaseCooldown,
 		staleAllocations:        make(map[string]int),
 	}
 }
@@ -66,6 +73,7 @@ type cleaner struct {
 	poolConfReader          pool.ConfigReader
 	checkInterval           time.Duration
 	checkCountBeforeRelease int
+	releaseCooldown         time.Duration
 	// key is <pool_name>|<container_id>|<interface_name>, value is count of failed checks
 	staleAllocations map[string]int
 }
@@ -107,6 +115,18 @@ func (c *cleaner) loop(ctx context.Context) error {
 				"container_id", reservation.ContainerID, "interface_name", reservation.InterfaceName)
 			staleAllocKey := c.getStaleAllocKey(poolKey, reservation)
 			allReservations[staleAllocKey] = struct{}{}
+			if reservation.IsReleased() {
+				// reservation was already released by its owner (e.g. CNI DEL) and is only
+				// being retained for the release cooldown; it has no Pod to check against.
+				// Check expiry locally first to skip the store call while still cooling down.
+				if time.Since(reservation.ReleasedAt) >= c.releaseCooldown &&
+					session.ReleaseReservationByID(
+						poolKey, reservation.ContainerID, reservation.InterfaceName, c.releaseCooldown) {
+					resLogger.Info("release cooldown expired, removing reservation")
+				}
+				delete(c.staleAllocations, staleAllocKey)
+				continue
+			}
 			if reservation.Metadata.PodName == "" || reservation.Metadata.PodNamespace == "" {
 				resLogger.V(2).Info("reservation has no required metadata fields, skip")
 				continue
@@ -148,7 +168,9 @@ func (c *cleaner) loop(ctx context.Context) error {
 			poolKey, containerID, ifName := keyFields[0], keyFields[1], keyFields[2]
 			logger.Info("stale reservation released", "poolKey", poolKey,
 				"container_id", containerID, "interface_name", ifName)
-			session.ReleaseReservationByID(poolKey, containerID, ifName)
+			// an orphaned allocation (no matching Pod) is unrelated to the release
+			// cooldown; remove it immediately
+			session.ReleaseReservationByID(poolKey, containerID, ifName, 0)
 		}
 	}
 	// remove empty pools if they don't have configuration in the k8s API

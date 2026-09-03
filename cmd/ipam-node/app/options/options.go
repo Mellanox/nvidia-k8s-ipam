@@ -37,6 +37,10 @@ const (
 	// DefaultStaleIPCheckCountBeforeRelease contains default number of checks to do before
 	// an allocation with no matching Pod is released
 	DefaultStaleIPCheckCountBeforeRelease = 3
+	// DefaultReleasedIPCooldown contains default minimum time a released IP allocation is
+	// retained before it becomes eligible for reuse. Zero disables the cooldown, preserving
+	// the legacy behavior of releasing allocations for reuse immediately.
+	DefaultReleasedIPCooldown = 0 * time.Second
 )
 
 // New initialize and return new Options object
@@ -62,6 +66,7 @@ func New() *Options {
 		CNIForcePoolName:               false,
 		StaleIPCheckInterval:           DefaultStaleIPCheckInterval,
 		StaleIPCheckCountBeforeRelease: DefaultStaleIPCheckCountBeforeRelease,
+		ReleasedIPCooldown:             DefaultReleasedIPCooldown,
 	}
 }
 
@@ -88,6 +93,9 @@ type Options struct {
 	// stale IP allocations cleanup
 	StaleIPCheckInterval           time.Duration
 	StaleIPCheckCountBeforeRelease int
+	// ReleasedIPCooldown is the minimum time a released IP allocation is retained before
+	// it becomes eligible for reuse. Zero disables the cooldown.
+	ReleasedIPCooldown time.Duration
 }
 
 // AddNamedFlagSets register flags for common options in NamedFlagSets
@@ -113,7 +121,8 @@ func (o *Options) AddNamedFlagSets(sharedFS *cliflag.NamedFlagSets) {
 	daemonFS.StringVar(&o.StoreFile, "store-file", o.StoreFile,
 		"Path of the file which used to store allocations")
 	daemonFS.DurationVar(&o.StaleIPCheckInterval, "stale-ip-check-interval", o.StaleIPCheckInterval,
-		"Delay between checks for stale IP allocations (allocations with no matching Pod)")
+		"Delay between checks for stale IP allocations (allocations with no matching Pod). "+
+			"Also gates how often released-ip-cooldown expiry is checked")
 	daemonFS.IntVar(&o.StaleIPCheckCountBeforeRelease, "stale-ip-check-count-before-release",
 		o.StaleIPCheckCountBeforeRelease,
 		"Number of consecutive failed checks before a stale IP allocation is released. "+
@@ -122,6 +131,13 @@ func (o *Options) AddNamedFlagSets(sharedFS *cliflag.NamedFlagSets) {
 			"counting once it observes a missing Pod, an allocation may remain without a "+
 			"matching Pod for up to roughly stale-ip-check-interval * "+
 			"(stale-ip-check-count-before-release + 1) before it is released")
+	daemonFS.DurationVar(&o.ReleasedIPCooldown, "released-ip-cooldown", o.ReleasedIPCooldown,
+		"Minimum time a released IP allocation is retained before it becomes eligible for reuse. "+
+			"Applies to normal releases (e.g. CNI DEL), unlike stale-ip-check-interval/"+
+			"stale-ip-check-count-before-release which only apply to allocations whose Pod can no "+
+			"longer be found. Zero disables the cooldown, releasing allocations for reuse immediately. "+
+			"The actual delay may exceed this value by up to stale-ip-check-interval, since expiry is "+
+			"checked on that cadence")
 
 	cniFS := sharedFS.FlagSet("Shim CNI Configuration")
 	cniFS.StringVar(&o.CNIBinDir,
@@ -163,6 +179,9 @@ func (o *Options) Validate() error {
 	}
 	if o.StaleIPCheckCountBeforeRelease < 1 {
 		return fmt.Errorf("stale-ip-check-count-before-release must be at least 1")
+	}
+	if o.ReleasedIPCooldown < 0 {
+		return fmt.Errorf("released-ip-cooldown must not be negative")
 	}
 	if err := o.verifyPaths(); err != nil {
 		return err

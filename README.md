@@ -560,10 +560,12 @@ Node daemon flags:
                 The address the metric endpoint binds to. (default ":8080")
       --node-name string                                                                                                                                                                             
                 The name of the Node on which the daemon runs
+      --released-ip-cooldown duration                                                                                                                                                                
+                Minimum time a released IP allocation is retained before it becomes eligible for reuse. Applies to normal releases (e.g. CNI DEL), unlike stale-ip-check-interval/stale-ip-check-count-before-release which only apply to allocations whose Pod can no longer be found. Zero disables the cooldown, releasing allocations for reuse immediately. The actual delay may exceed this value by up to stale-ip-check-interval, since expiry is checked on that cadence
       --stale-ip-check-count-before-release int                                                                                                                                                      
                 Number of consecutive failed checks before a stale IP allocation is released. Together with stale-ip-check-interval this defines the effective TTL: since checks happen every stale-ip-check-interval and a check only starts counting once it observes a missing Pod, an allocation may remain without a matching Pod for up to roughly stale-ip-check-interval * (stale-ip-check-count-before-release + 1) before it is released (default 3)
       --stale-ip-check-interval duration                                                                                                                                                             
-                Delay between checks for stale IP allocations (allocations with no matching Pod) (default 1m0s)
+                Delay between checks for stale IP allocations (allocations with no matching Pod). Also gates how often released-ip-cooldown expiry is checked (default 1m0s)
       --store-file string                                                                                                                                                                            
                 Path of the file which used to store allocations (default "/var/lib/cni/nv-ipam/store")
       --ippools-namespace string

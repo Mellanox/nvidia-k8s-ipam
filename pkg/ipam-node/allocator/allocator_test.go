@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net"
 	"path/filepath"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -131,7 +132,7 @@ var _ = Describe("allocator", func() {
 			a := mkAlloc(store)
 			Expect(store.Reserve(testPoolName, testContainerID, testIFName, types.ReservationMetadata{}, net.IP{192, 168, 1, 3})).
 				NotTo(HaveOccurred())
-			store.ReleaseReservationByID(testPoolName, testContainerID, testIFName)
+			store.ReleaseReservationByID(testPoolName, testContainerID, testIFName, 0)
 			checkAlloc(a, "0", net.IP{192, 168, 1, 4})
 			checkAlloc(a, "1", net.IP{192, 168, 1, 5})
 			checkAlloc(a, "2", net.IP{192, 168, 1, 6})
@@ -299,11 +300,31 @@ var _ = Describe("allocator", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(res.Address.String()).To(Equal("192.168.1.2/29"))
 
-			store.ReleaseReservationByID(testPoolName, testContainerID, testIFName)
+			store.ReleaseReservationByID(testPoolName, testContainerID, testIFName, 0)
 
 			res, err = alloc.Allocate(testContainerID, testIFName, types.ReservationMetadata{}, nil)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(res.Address.String()).To(Equal("192.168.1.3/29"))
+		})
+
+		It("fails while its own prior reservation is cooling down, even for a free pool", func() {
+			store, err := storePkg.New(
+				filepath.Join(GinkgoT().TempDir(), "test_store")).Open(context.Background())
+			Expect(err).NotTo(HaveOccurred())
+			defer func() {
+				_ = store.Commit()
+			}()
+			alloc := mkAlloc(store)
+			res, err := alloc.Allocate(testContainerID, testIFName, types.ReservationMetadata{}, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(res.Address.String()).To(Equal("192.168.1.2/29"))
+
+			// released with a cooldown: kept on file, blocking 192.168.1.2 from reuse
+			// by anyone, including this same container, until the cooldown elapses
+			store.ReleaseReservationByID(testPoolName, testContainerID, testIFName, time.Minute)
+
+			_, err = alloc.Allocate(testContainerID, testIFName, types.ReservationMetadata{}, nil)
+			Expect(err).To(MatchError(storePkg.ErrReservationAlreadyExist))
 		})
 	})
 	Context("when out of ips", func() {

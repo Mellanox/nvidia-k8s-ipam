@@ -278,7 +278,7 @@ func RunNodeDaemon(ctx context.Context, config *rest.Config, opts *options.Optio
 			return
 		}
 		c := cleaner.New(mgr.GetClient(), k8sClient, store, poolManager,
-			opts.StaleIPCheckInterval, opts.StaleIPCheckCountBeforeRelease)
+			opts.StaleIPCheckInterval, opts.StaleIPCheckCountBeforeRelease, opts.ReleasedIPCooldown)
 		c.Start(innerCtx)
 		logger.Info("cleaner stopped")
 	}()
@@ -315,7 +315,7 @@ func initGRPCServer(ctx context.Context, opts *options.Options,
 		middleware.LogCallMiddleware))
 
 	nodev1.RegisterIPAMServiceServer(grpcServer,
-		handlers.New(poolConfReader, store, allocator.NewIPAllocator))
+		handlers.New(poolConfReader, store, allocator.NewIPAllocator, opts.ReleasedIPCooldown))
 	return grpcServer, listener, nil
 }
 
