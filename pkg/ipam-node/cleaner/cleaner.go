@@ -166,11 +166,14 @@ func (c *cleaner) loop(ctx context.Context) error {
 		if count > c.checkCountBeforeRelease {
 			keyFields := strings.SplitN(k, "|", 3)
 			poolKey, containerID, ifName := keyFields[0], keyFields[1], keyFields[2]
-			logger.Info("stale reservation released", "poolKey", poolKey,
-				"container_id", containerID, "interface_name", ifName)
-			// an orphaned allocation (no matching Pod) is unrelated to the release
-			// cooldown; remove it immediately
-			session.ReleaseReservationByID(poolKey, containerID, ifName, 0)
+			switch {
+			case session.ReleaseReservationByID(poolKey, containerID, ifName, c.releaseCooldown):
+				logger.Info("stale reservation released", "poolKey", poolKey,
+					"container_id", containerID, "interface_name", ifName)
+			case c.releaseCooldown > 0:
+				logger.Info("stale reservation marked released, pending release cooldown before its IP is freed",
+					"poolKey", poolKey, "container_id", containerID, "interface_name", ifName)
+			}
 		}
 	}
 	// remove empty pools if they don't have configuration in the k8s API

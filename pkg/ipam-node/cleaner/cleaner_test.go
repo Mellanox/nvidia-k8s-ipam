@@ -42,8 +42,10 @@ const (
 	testPool3     = "pool3"
 	testIFName    = "net0"
 	// used by the release cooldown tests
-	testReleaseCooldownIP = "192.168.10.100"
-	testPendingCooldownIP = "192.168.11.100"
+	testReleaseCooldownIP       = "192.168.10.100"
+	testPendingCooldownIP       = "192.168.11.100"
+	testOrphanCooldownIP        = "192.168.12.100"
+	testOrphanPendingCooldownIP = "192.168.13.100"
 )
 
 func createPod(name, namespace string) string {
@@ -230,6 +232,116 @@ var _ = Describe("Cleaner", func() {
 				g.Expect(
 					s.Reserve(testPool1, "id2", testIFName, types.ReservationMetadata{},
 						net.ParseIP(testPendingCooldownIP))).To(MatchError(storePkg.ErrIPAlreadyReserved))
+			}, checkInterval*5, checkInterval).Should(Succeed())
+		}()
+		Eventually(done, time.Minute).Should(BeClosed())
+	})
+
+	It("Orphan cleanup respects the release cooldown", func() {
+		done := make(chan interface{})
+		go func() {
+			defer GinkgoRecover()
+			defer close(done)
+			testCtx, testCancel := context.WithCancel(ctx)
+			defer testCancel()
+			storePath := filepath.Join(GinkgoT().TempDir(), "test_store_orphan_cooldown")
+			store := storePkg.New(storePath)
+
+			poolManager := poolMockPkg.NewManager(GinkgoT())
+
+			session, err := store.Open(testCtx)
+			Expect(err).NotTo(HaveOccurred())
+
+			checkInterval := time.Millisecond * 50
+			releaseCooldown := time.Millisecond * 100
+
+			// no Pod is ever created for this reservation, so it's detected as an orphan
+			Expect(session.Reserve(testPool1, "id1", testIFName, types.ReservationMetadata{
+				CreateTime:   time.Now().Format(time.RFC3339Nano),
+				PodName:      "never-created",
+				PodNamespace: testNamespace,
+			}, net.ParseIP(testOrphanCooldownIP))).NotTo(HaveOccurred())
+			Expect(session.Commit()).NotTo(HaveOccurred())
+
+			cleaner := cleanerPkg.New(fakeClient, k8sClient, store, poolManager, checkInterval, 1, releaseCooldown)
+
+			go func() {
+				cleaner.Start(testCtx)
+			}()
+
+			// once detected as an orphan, it's released the same way a normal CNI DEL is:
+			// marked released and held until releaseCooldown elapses, then removed
+			Eventually(func(g Gomega) {
+				s, err := store.Open(testCtx)
+				g.Expect(err).NotTo(HaveOccurred())
+				defer s.Cancel()
+				g.Expect(storetest.FindReservation(s, testPool1, "id1", testIFName)).To(BeNil())
+			}, 10).Should(Succeed())
+
+			// the IP should be reusable now that the released reservation was removed
+			s, err := store.Open(testCtx)
+			Expect(err).NotTo(HaveOccurred())
+			defer s.Cancel()
+			Expect(s.Reserve(testPool1, "id2", testIFName, types.ReservationMetadata{},
+				net.ParseIP(testOrphanCooldownIP))).NotTo(HaveOccurred())
+		}()
+		Eventually(done, time.Minute).Should(BeClosed())
+	})
+
+	It("Orphan cleanup marks the reservation released and keeps blocking its IP during the cooldown", func() {
+		done := make(chan interface{})
+		go func() {
+			defer GinkgoRecover()
+			defer close(done)
+			testCtx, testCancel := context.WithCancel(ctx)
+			defer testCancel()
+			storePath := filepath.Join(GinkgoT().TempDir(), "test_store_orphan_cooldown_pending")
+			store := storePkg.New(storePath)
+
+			poolManager := poolMockPkg.NewManager(GinkgoT())
+
+			session, err := store.Open(testCtx)
+			Expect(err).NotTo(HaveOccurred())
+
+			checkInterval := time.Millisecond * 50
+			releaseCooldown := time.Minute
+
+			Expect(session.Reserve(testPool1, "id1", testIFName, types.ReservationMetadata{
+				CreateTime:   time.Now().Format(time.RFC3339Nano),
+				PodName:      "never-created",
+				PodNamespace: testNamespace,
+			}, net.ParseIP(testOrphanPendingCooldownIP))).NotTo(HaveOccurred())
+			Expect(session.Commit()).NotTo(HaveOccurred())
+
+			cleaner := cleanerPkg.New(fakeClient, k8sClient, store, poolManager, checkInterval, 1, releaseCooldown)
+
+			go func() {
+				cleaner.Start(testCtx)
+			}()
+
+			// orphan detection itself takes a couple of ticks to cross the stale-count
+			// threshold; wait for that transition before asserting it holds steady
+			Eventually(func(g Gomega) {
+				s, err := store.Open(testCtx)
+				g.Expect(err).NotTo(HaveOccurred())
+				defer s.Cancel()
+				res := storetest.FindReservation(s, testPool1, "id1", testIFName)
+				g.Expect(res).NotTo(BeNil())
+				g.Expect(res.IsReleased()).To(BeTrue())
+			}, 10).Should(Succeed())
+
+			// with a one-minute cooldown, the now-released reservation must stay marked
+			// released (not deleted) and its IP must stay blocked across several ticks
+			Consistently(func(g Gomega) {
+				s, err := store.Open(testCtx)
+				g.Expect(err).NotTo(HaveOccurred())
+				defer s.Cancel()
+				res := storetest.FindReservation(s, testPool1, "id1", testIFName)
+				g.Expect(res).NotTo(BeNil())
+				g.Expect(res.IsReleased()).To(BeTrue())
+				g.Expect(
+					s.Reserve(testPool1, "id2", testIFName, types.ReservationMetadata{},
+						net.ParseIP(testOrphanPendingCooldownIP))).To(MatchError(storePkg.ErrIPAlreadyReserved))
 			}, checkInterval*5, checkInterval).Should(Succeed())
 		}()
 		Eventually(done, time.Minute).Should(BeClosed())
