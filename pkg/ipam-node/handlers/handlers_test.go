@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -107,7 +108,7 @@ var _ = Describe("Handlers", func() {
 			poolName string, store storePkg.Session) allocatorPkg.IPAllocator {
 			return allocators[poolName]
 		}
-		handlers = handlersPkg.New(poolManager, store, getAllocFunc)
+		handlers = handlersPkg.New(poolManager, store, getAllocFunc, 0)
 	})
 
 	It("Allocate succeed", func() {
@@ -389,19 +390,29 @@ var _ = Describe("Handlers", func() {
 	})
 	It("Deallocate succeed", func() {
 		store.On("Open", mock.Anything).Return(session, nil)
-		session.On("ReleaseReservationByID", testPoolName1, "id1", "net0").Return()
-		session.On("ReleaseReservationByID", testPoolName2, "id1", "net0").Return()
+		session.On("ReleaseReservationByID", testPoolName1, "id1", "net0", time.Duration(0)).Return(true)
+		session.On("ReleaseReservationByID", testPoolName2, "id1", "net0", time.Duration(0)).Return(true)
 		session.On("Commit").Return(nil)
 		_, err := handlers.Deallocate(ctx, &nodev1.DeallocateRequest{Parameters: getValidIPAMParams()})
 		Expect(err).NotTo(HaveOccurred())
 	})
 	It("Deallocate failed: failed to commit", func() {
 		store.On("Open", mock.Anything).Return(session, nil)
-		session.On("ReleaseReservationByID", testPoolName1, "id1", "net0").Return()
-		session.On("ReleaseReservationByID", testPoolName2, "id1", "net0").Return()
+		session.On("ReleaseReservationByID", testPoolName1, "id1", "net0", time.Duration(0)).Return(true)
+		session.On("ReleaseReservationByID", testPoolName2, "id1", "net0", time.Duration(0)).Return(true)
 		session.On("Commit").Return(fmt.Errorf("test error"))
 		_, err := handlers.Deallocate(ctx, &nodev1.DeallocateRequest{Parameters: getValidIPAMParams()})
 		Expect(status.Code(err) == codes.Internal).To(BeTrue())
+	})
+	It("Deallocate with a release cooldown forwards it to the store", func() {
+		releaseCooldown := time.Minute
+		cooldownHandlers := handlersPkg.New(poolManager, store, getAllocFunc, releaseCooldown)
+		store.On("Open", mock.Anything).Return(session, nil)
+		session.On("ReleaseReservationByID", testPoolName1, "id1", "net0", releaseCooldown).Return(true)
+		session.On("ReleaseReservationByID", testPoolName2, "id1", "net0", releaseCooldown).Return(true)
+		session.On("Commit").Return(nil)
+		_, err := cooldownHandlers.Deallocate(ctx, &nodev1.DeallocateRequest{Parameters: getValidIPAMParams()})
+		Expect(err).NotTo(HaveOccurred())
 	})
 	It("Deallocate failed: canceled", func() {
 		store.On("Open", mock.Anything).Return(session, nil)
