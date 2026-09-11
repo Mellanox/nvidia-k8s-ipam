@@ -26,11 +26,12 @@ import (
 	. "github.com/onsi/gomega"
 
 	storePkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/store"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/store/storetest"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/types"
 )
 
 const (
-	testPoolKey      = "pool1"
+	testPoolKey       = "pool1"
 	testContainerID   = "id1"
 	testNetIfName     = "net0"
 	testPodUUID       = "a9516e9d-6f45-4693-b299-cc3d2f83e26a"
@@ -93,7 +94,7 @@ var _ = Describe("Store", func() {
 		Expect(s.GetLastReservedIP(testPoolKey)).To(Equal(newLastReservedIP))
 
 		By("Release reservation")
-		s.ReleaseReservationByID(testPoolKey, testContainerID, testNetIfName)
+		s.ReleaseReservationByID(testPoolKey, testContainerID, testNetIfName, 0)
 
 		By("Check reservation removed")
 		Expect(s.GetReservationByID(testPoolKey, testContainerID, testNetIfName)).To(BeNil())
@@ -237,5 +238,112 @@ var _ = Describe("Store", func() {
 		Expect(s.ListReservations(testPoolKey)).NotTo(BeEmpty())
 		s.RemovePool(testPoolKey)
 		Expect(s.ListReservations(testPoolKey)).To(BeEmpty())
+	})
+	It("Release with a cooldown marks the reservation released instead of removing it", func() {
+		s, err := store.Open(context.Background())
+		Expect(err).NotTo(HaveOccurred())
+		createTestReservation(s)
+
+		By("Release with a cooldown")
+		s.ReleaseReservationByID(testPoolKey, testContainerID, testNetIfName, time.Minute)
+
+		By("GetReservationByID treats it as gone, since its owner already released it")
+		Expect(s.GetReservationByID(testPoolKey, testContainerID, testNetIfName)).To(BeNil())
+
+		By("But the entry is retained and still blocks the IP from reuse")
+		res := storetest.FindReservation(s, testPoolKey, testContainerID, testNetIfName)
+		Expect(res).NotTo(BeNil())
+		Expect(res.IsReleased()).To(BeTrue())
+		Expect(res.ReleasedAt).NotTo(BeZero())
+		Expect(
+			s.Reserve(testPoolKey, "other", testNetIfName,
+				types.ReservationMetadata{}, net.ParseIP(testIP))).To(MatchError(storePkg.ErrIPAlreadyReserved))
+
+		By("A retried release (e.g. idempotent CNI DEL) does not reset the release timestamp")
+		firstReleasedAt := res.ReleasedAt
+		s.ReleaseReservationByID(testPoolKey, testContainerID, testNetIfName, time.Minute)
+		res = storetest.FindReservation(s, testPoolKey, testContainerID, testNetIfName)
+		Expect(res).NotTo(BeNil())
+		Expect(res.ReleasedAt).To(Equal(firstReleasedAt))
+
+		By("It is not removed before the cooldown elapses")
+		s.ReleaseReservationByID(testPoolKey, testContainerID, testNetIfName, time.Hour)
+		Expect(storetest.FindReservation(s, testPoolKey, testContainerID, testNetIfName)).NotTo(BeNil())
+
+		By("It is removed, freeing the IP, once the cooldown has elapsed")
+		s.ReleaseReservationByID(testPoolKey, testContainerID, testNetIfName, time.Nanosecond)
+		Expect(storetest.FindReservation(s, testPoolKey, testContainerID, testNetIfName)).To(BeNil())
+		Expect(
+			s.Reserve(testPoolKey, "other", testNetIfName,
+				types.ReservationMetadata{}, net.ParseIP(testIP))).NotTo(HaveOccurred())
+	})
+	It("Release with no cooldown removes the reservation immediately", func() {
+		s, err := store.Open(context.Background())
+		Expect(err).NotTo(HaveOccurred())
+		createTestReservation(s)
+		s.ReleaseReservationByID(testPoolKey, testContainerID, testNetIfName, 0)
+		Expect(storetest.FindReservation(s, testPoolKey, testContainerID, testNetIfName)).To(BeNil())
+	})
+	It("Release is a no-op for an unknown reservation", func() {
+		s, err := store.Open(context.Background())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(func() { s.ReleaseReservationByID(testPoolKey, testContainerID, testNetIfName, time.Minute) }).NotTo(Panic())
+		Expect(s.GetReservationByID(testPoolKey, testContainerID, testNetIfName)).To(BeNil())
+
+		By("it does not dirty the session, so Commit does not write to disk")
+		Expect(s.Commit()).NotTo(HaveOccurred())
+		_, err = os.Stat(storePath)
+		Expect(err).To(MatchError(os.ErrNotExist))
+	})
+	It("Retrying a release before the cooldown elapses does not write to disk again", func() {
+		s, err := store.Open(context.Background())
+		Expect(err).NotTo(HaveOccurred())
+		createTestReservation(s)
+		// first release: transitions the reservation to Released, which does need
+		// persisting so it survives a restart
+		Expect(s.ReleaseReservationByID(testPoolKey, testContainerID, testNetIfName, time.Hour)).To(BeFalse())
+		Expect(s.Commit()).NotTo(HaveOccurred())
+
+		s, err = store.Open(context.Background())
+		Expect(err).NotTo(HaveOccurred())
+		fileInfoBefore, err := os.Stat(storePath)
+		Expect(err).NotTo(HaveOccurred())
+
+		// retried release (e.g. idempotent CNI DEL): already Released, cooldown not
+		// elapsed yet -- a genuine no-op that should not dirty the session
+		Expect(s.ReleaseReservationByID(testPoolKey, testContainerID, testNetIfName, time.Hour)).To(BeFalse())
+		Expect(s.Commit()).NotTo(HaveOccurred())
+
+		fileInfoAfter, err := os.Stat(storePath)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(fileInfoAfter.ModTime()).To(Equal(fileInfoBefore.ModTime()))
+	})
+	It("Re-reserving the same id/ifName is rejected while its cooldown is pending, "+
+		"even at the exact same address", func() {
+		s, err := store.Open(context.Background())
+		Expect(err).NotTo(HaveOccurred())
+		createTestReservation(s)
+		s.ReleaseReservationByID(testPoolKey, testContainerID, testNetIfName, time.Minute)
+
+		By("the cooldown is a floor on reuse of the address, including by its own former owner")
+		Expect(
+			s.Reserve(testPoolKey, testContainerID, testNetIfName,
+				types.ReservationMetadata{}, net.ParseIP(testIP))).To(MatchError(storePkg.ErrReservationAlreadyExist))
+
+		By("the reservation is untouched and still blocks the address")
+		res := storetest.FindReservation(s, testPoolKey, testContainerID, testNetIfName)
+		Expect(res).NotTo(BeNil())
+		Expect(res.IPAddress).To(Equal(net.ParseIP(testIP)))
+		Expect(res.IsReleased()).To(BeTrue())
+	})
+	It("A different id/ifName targeting a cooling-down address gets a retryable error", func() {
+		s, err := store.Open(context.Background())
+		Expect(err).NotTo(HaveOccurred())
+		createTestReservation(s)
+		s.ReleaseReservationByID(testPoolKey, testContainerID, testNetIfName, time.Minute)
+
+		Expect(
+			s.Reserve(testPoolKey, "other", testNetIfName,
+				types.ReservationMetadata{}, net.ParseIP(testIP))).To(MatchError(storePkg.ErrIPAlreadyReserved))
 	})
 })

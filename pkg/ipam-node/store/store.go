@@ -52,7 +52,9 @@ type Session interface {
 	// Reserve reserves IP for the id and interface name,
 	// returns error if allocation failed
 	Reserve(poolKey string, id string, ifName string, meta types.ReservationMetadata, address net.IP) error
-	// ListReservations list all reservations in the pool
+	// ListReservations lists all reservations in the pool, including ones already
+	// released by their owner and pending removal once their cooldown elapses (see
+	// ReleaseReservationByID). Unlike GetReservationByID, it does not filter those out.
 	ListReservations(poolKey string) []types.Reservation
 	// ListPools return list with names of all known pools
 	ListPools() []string
@@ -62,10 +64,26 @@ type Session interface {
 	GetLastReservedIP(poolKey string) net.IP
 	// SetLastReservedIP set last reserved IP fot the pool
 	SetLastReservedIP(poolKey string, ip net.IP)
-	// ReleaseReservationByID releases reservation by id and interface name
-	ReleaseReservationByID(poolKey string, id string, ifName string)
-	// GetReservationByID returns existing reservation for id and interface name,
-	// return nil if allocation not found
+	// ReleaseReservationByID releases the reservation identified by id and interface name.
+	// Returns true if the reservation was actually removed from the store.
+	//
+	// If cooldown <= 0, the reservation is removed immediately, regardless of any prior
+	// release state.
+	//
+	// If cooldown > 0:
+	//   - a reservation not yet marked released is marked released now (kept in the
+	//     store, still blocking its IP from reuse) instead of being removed. The
+	//     release timestamp is set once and is not reset by later calls, since CNI DEL
+	//     is idempotent and may be retried for the same id/ifName.
+	//   - a reservation already marked released is removed once its cooldown has
+	//     elapsed; otherwise this call is a no-op.
+	//
+	// This is a no-op (returns false) if the reservation does not exist.
+	ReleaseReservationByID(poolKey string, id string, ifName string, cooldown time.Duration) bool
+	// GetReservationByID returns the existing, still-active reservation for id and
+	// interface name. Returns nil if not found, including for a reservation that has
+	// already been released by its owner and is only pending removal (see
+	// ReleaseReservationByID).
 	GetReservationByID(poolKey string, id string, ifName string) *types.Reservation
 	// Commit writes persistedData to the disk and release the lock.
 	// the store can't be used after this call
@@ -193,20 +211,18 @@ func (s *session) Reserve(poolKey string, id string, ifName string,
 	s.checkClosed()
 	reservationKey := s.getKey(id, ifName)
 	poolData := s.getPoolData(poolKey, s.tmpData)
-	_, exist := poolData.Entries[reservationKey]
-	if exist {
+	// A reservation pending its release cooldown (IsReleased() == true) still occupies
+	// this key and blocks it, exactly like an active one: the cooldown is a floor on
+	// reuse of the address, and that applies to its own former owner too, not just other
+	// callers.
+	if _, exist := poolData.Entries[reservationKey]; exist {
 		return ErrReservationAlreadyExist
 	}
-	duplicateIP := false
 	for _, r := range poolData.Entries {
 		if address.Equal(r.IPAddress) {
-			duplicateIP = true
-			break
+			// duplicate allocator should retry
+			return ErrIPAlreadyReserved
 		}
-	}
-	if duplicateIP {
-		// duplicate allocator should retry
-		return ErrIPAlreadyReserved
 	}
 	poolData.LastReservedIP = address
 	poolData.LastPoolConfig = meta.PoolConfigSnapshot
@@ -218,9 +234,14 @@ func (s *session) Reserve(poolKey string, id string, ifName string,
 	}
 	reservation.Metadata.CreateTime = time.Now().Format(time.RFC3339Nano)
 	poolData.Entries[reservationKey] = reservation
+	s.updatePoolData(poolKey, poolData)
+	return nil
+}
+
+// updatePoolData stores poolData under poolKey in the session and marks it modified.
+func (s *session) updatePoolData(poolKey string, poolData *types.PoolReservations) {
 	s.tmpData.Pools[poolKey] = *poolData
 	s.isModified = true
-	return nil
 }
 
 func (s *session) getPoolData(poolKey string, layout *types.Root) *types.PoolReservations {
@@ -274,17 +295,32 @@ func (s *session) SetLastReservedIP(poolKey string, ip net.IP) {
 	s.checkClosed()
 	poolData := s.getPoolData(poolKey, s.tmpData)
 	poolData.LastReservedIP = ip
-	s.tmpData.Pools[poolKey] = *poolData
-	s.isModified = true
+	s.updatePoolData(poolKey, poolData)
 }
 
 // ReleaseReservationByID is the Session interface implementation for session
-func (s *session) ReleaseReservationByID(poolKey string, id string, ifName string) {
+func (s *session) ReleaseReservationByID(poolKey string, id string, ifName string, cooldown time.Duration) bool {
 	s.checkClosed()
+	key := s.getKey(id, ifName)
 	poolData := s.getPoolData(poolKey, s.tmpData)
-	delete(poolData.Entries, s.getKey(id, ifName))
-	s.tmpData.Pools[poolKey] = *poolData
-	s.isModified = true
+	reservation, exist := poolData.Entries[key]
+	if !exist {
+		return false
+	}
+	expired := reservation.IsReleased() && time.Since(reservation.ReleasedAt) >= cooldown
+	if cooldown > 0 && reservation.IsReleased() && !expired {
+		return false
+	}
+
+	remove := cooldown <= 0 || expired
+	if remove {
+		delete(poolData.Entries, key)
+	} else {
+		reservation.ReleasedAt = time.Now()
+		poolData.Entries[key] = reservation
+	}
+	s.updatePoolData(poolKey, poolData)
+	return remove
 }
 
 // GetReservationByID is the Session interface implementation for session
@@ -292,7 +328,7 @@ func (s *session) GetReservationByID(poolKey string, id string, ifName string) *
 	s.checkClosed()
 	poolData := s.getPoolData(poolKey, s.tmpData)
 	reservation, exist := poolData.Entries[s.getKey(id, ifName)]
-	if !exist {
+	if !exist || reservation.IsReleased() {
 		return nil
 	}
 	return &reservation

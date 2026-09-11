@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"hash/fnv"
+	"time"
 )
 
 var (
@@ -41,14 +42,23 @@ func NewChecksum(r *Root) Checksum {
 
 // Get returns calculated checksum for the Root object
 func getChecksum(r *Root) uint32 {
+	stripped := r.DeepCopy()
+	stripped.Checksum = 0
+	// Zero ReleasedAt: an older binary's Reservation type predates this field and drops
+	// it on load, so including it here would make that binary compute a different
+	// checksum than the one stored, breaking rollback (nvidia-k8s-ipam#301).
+	for _, pool := range stripped.Pools {
+		for key, entry := range pool.Entries {
+			entry.ReleasedAt = time.Time{}
+			pool.Entries[key] = entry
+		}
+	}
+
 	h := fnv.New32a()
-	tmpChecksum := r.Checksum
-	r.Checksum = 0
-	data, err := json.Marshal(r)
+	data, err := json.Marshal(stripped)
 	if err != nil {
 		panic("failed to compute checksum for input data")
 	}
-	r.Checksum = tmpChecksum
 	_, _ = h.Write(data)
 	return h.Sum32()
 }

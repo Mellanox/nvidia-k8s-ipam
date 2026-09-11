@@ -40,11 +40,19 @@ func (h *Handlers) Deallocate(
 	}
 	poolType := poolTypeAsString(params.PoolType)
 	for _, poolName := range params.Pools {
-		store.ReleaseReservationByID(common.GetPoolKey(poolName, poolType), params.CniContainerid, params.CniIfname)
+		poolKey := common.GetPoolKey(poolName, poolType)
+		// with a positive cooldown, the reservation is kept in the store (blocking its
+		// IP from reuse) until the cleaner removes it once the cooldown expires
+		removed := store.ReleaseReservationByID(poolKey, params.CniContainerid, params.CniIfname, h.releaseCooldown)
+		switch {
+		case removed:
+			reqLog.Info("reservation released", "poolKey", poolKey)
+		case h.releaseCooldown > 0:
+			reqLog.Info("reservation marked released, pending release cooldown before its IP is freed", "poolKey", poolKey)
+		}
 	}
 	if err := h.closeSession(ctx, store, nil); err != nil {
 		return nil, err
 	}
-	reqLog.Info("reservation released")
 	return &nodev1.DeallocateResponse{}, nil
 }

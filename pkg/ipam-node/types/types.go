@@ -16,6 +16,7 @@ package types
 import (
 	"encoding/json"
 	"net"
+	"time"
 )
 
 // ImplementedVersion contains implemented version of the store file layout
@@ -96,6 +97,17 @@ type Reservation struct {
 	InterfaceName string              `json:"interface_name"`
 	IPAddress     net.IP              `json:"ip_address"`
 	Metadata      ReservationMetadata `json:"metadata"`
+	// ReleasedAt is the time at which the reservation was released by its owner (e.g. CNI
+	// DEL). A zero value means the reservation is still active. A non-zero value means it
+	// is only being retained in the store for the release cooldown period, and still
+	// blocks its IP from being reused until the cooldown expires.
+	ReleasedAt time.Time `json:"released_at,omitzero"`
+}
+
+// IsReleased reports whether the reservation has been released by its owner and is only
+// being retained for the release cooldown period.
+func (r *Reservation) IsReleased() bool {
+	return !r.ReleasedAt.IsZero()
 }
 
 // DeepCopy is a deepcopy function for the Reservation struct

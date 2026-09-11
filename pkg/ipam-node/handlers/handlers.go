@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/go-logr/logr"
 	"google.golang.org/grpc/codes"
@@ -33,11 +34,13 @@ type GetAllocatorFunc = func(s *allocator.RangeSet, exclusions *allocator.RangeS
 	poolKey string, session storePkg.Session) allocator.IPAllocator
 
 // New create and initialize new instance of grpc Handlers
-func New(poolConfReader poolPkg.ConfigReader, store storePkg.Store, getAllocFunc GetAllocatorFunc) *Handlers {
+func New(poolConfReader poolPkg.ConfigReader, store storePkg.Store,
+	getAllocFunc GetAllocatorFunc, releaseCooldown time.Duration) *Handlers {
 	return &Handlers{
-		poolConfReader: poolConfReader,
-		store:          store,
-		getAllocFunc:   getAllocFunc,
+		poolConfReader:  poolConfReader,
+		store:           store,
+		getAllocFunc:    getAllocFunc,
+		releaseCooldown: releaseCooldown,
 	}
 }
 
@@ -46,6 +49,9 @@ type Handlers struct {
 	poolConfReader poolPkg.ConfigReader
 	store          storePkg.Store
 	getAllocFunc   GetAllocatorFunc
+	// releaseCooldown is the minimum time a released reservation is retained in the
+	// store, blocking its IP from reuse, before it becomes eligible for removal
+	releaseCooldown time.Duration
 	nodev1.UnsafeIPAMServiceServer
 }
 

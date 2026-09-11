@@ -4,6 +4,7 @@ package mocks
 
 import (
 	net "net"
+	time "time"
 
 	mock "github.com/stretchr/testify/mock"
 
@@ -293,9 +294,22 @@ func (_c *Session_ListReservations_Call) RunAndReturn(run func(string) []types.R
 	return _c
 }
 
-// ReleaseReservationByID provides a mock function with given fields: poolKey, id, ifName
-func (_m *Session) ReleaseReservationByID(poolKey string, id string, ifName string) {
-	_m.Called(poolKey, id, ifName)
+// ReleaseReservationByID provides a mock function with given fields: poolKey, id, ifName, cooldown
+func (_m *Session) ReleaseReservationByID(poolKey string, id string, ifName string, cooldown time.Duration) bool {
+	ret := _m.Called(poolKey, id, ifName, cooldown)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ReleaseReservationByID")
+	}
+
+	var r0 bool
+	if rf, ok := ret.Get(0).(func(string, string, string, time.Duration) bool); ok {
+		r0 = rf(poolKey, id, ifName, cooldown)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+
+	return r0
 }
 
 // Session_ReleaseReservationByID_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ReleaseReservationByID'
@@ -307,23 +321,24 @@ type Session_ReleaseReservationByID_Call struct {
 //   - poolKey string
 //   - id string
 //   - ifName string
-func (_e *Session_Expecter) ReleaseReservationByID(poolKey interface{}, id interface{}, ifName interface{}) *Session_ReleaseReservationByID_Call {
-	return &Session_ReleaseReservationByID_Call{Call: _e.mock.On("ReleaseReservationByID", poolKey, id, ifName)}
+//   - cooldown time.Duration
+func (_e *Session_Expecter) ReleaseReservationByID(poolKey interface{}, id interface{}, ifName interface{}, cooldown interface{}) *Session_ReleaseReservationByID_Call {
+	return &Session_ReleaseReservationByID_Call{Call: _e.mock.On("ReleaseReservationByID", poolKey, id, ifName, cooldown)}
 }
 
-func (_c *Session_ReleaseReservationByID_Call) Run(run func(poolKey string, id string, ifName string)) *Session_ReleaseReservationByID_Call {
+func (_c *Session_ReleaseReservationByID_Call) Run(run func(poolKey string, id string, ifName string, cooldown time.Duration)) *Session_ReleaseReservationByID_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(string), args[1].(string), args[2].(string))
+		run(args[0].(string), args[1].(string), args[2].(string), args[3].(time.Duration))
 	})
 	return _c
 }
 
-func (_c *Session_ReleaseReservationByID_Call) Return() *Session_ReleaseReservationByID_Call {
-	_c.Call.Return()
+func (_c *Session_ReleaseReservationByID_Call) Return(_a0 bool) *Session_ReleaseReservationByID_Call {
+	_c.Call.Return(_a0)
 	return _c
 }
 
-func (_c *Session_ReleaseReservationByID_Call) RunAndReturn(run func(string, string, string)) *Session_ReleaseReservationByID_Call {
+func (_c *Session_ReleaseReservationByID_Call) RunAndReturn(run func(string, string, string, time.Duration) bool) *Session_ReleaseReservationByID_Call {
 	_c.Call.Return(run)
 	return _c
 }

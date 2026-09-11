@@ -14,6 +14,8 @@
 package types_test
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -28,5 +30,21 @@ var _ = Describe("Checksum", func() {
 		r1 := types.NewRoot()
 		r1.Pools["foo"] = *types.NewPoolReservations("foo")
 		Expect(types.NewChecksum(r1).Verify(types.NewRoot())).To(HaveOccurred())
+	})
+	It("ReleasedAt does not affect the v1 checksum, so an older binary can still verify it", func() {
+		r := types.NewRoot()
+		r.Pools["pool1"] = *types.NewPoolReservations("pool1")
+		r.Pools["pool1"].Entries["id1_net0"] = types.Reservation{ContainerID: "id1", InterfaceName: "net0"}
+		checksumBeforeRelease := types.NewChecksum(r)
+
+		entry := r.Pools["pool1"].Entries["id1_net0"]
+		entry.ReleasedAt = time.Now()
+		r.Pools["pool1"].Entries["id1_net0"] = entry
+
+		Expect(types.NewChecksum(r)).To(Equal(checksumBeforeRelease),
+			"setting ReleasedAt must not change the checksum, or a store file with a "+
+				"cooldown-pending reservation would fail 'checksum mismatch' on an older "+
+				"binary that predates ReleasedAt and silently drops it on load")
+		Expect(checksumBeforeRelease.Verify(r)).NotTo(HaveOccurred())
 	})
 })
