@@ -45,34 +45,31 @@ type IPAMServiceClient interface {
 	// Returns response with allocated IPs if allocation succeeds or an error in case of failure.
 	// If multiple pools are provided in the request, then allocation succeeds if it succeeds for all pools.
 	// errors:
-	//
-	//	Canceled - request was canceled by the caller
-	//	Internal - internal failure of the service, this error can't be fixed by the caller
-	//	InvalidArgument - missing required argument or argument has wrong format, check message for details
-	//	NotFound - allocation is requested for unknown IP pool
-	//	AlreadyExists - container identified by IPAMParameters already has allocated IP in the pool
-	//	ResourceExhausted - no free IP addresses available in the IP pool
+	//   Canceled - request was canceled by the caller
+	//   Internal - internal failure of the service, this error can't be fixed by the caller
+	//   InvalidArgument - missing required argument or argument has wrong format, check message for details
+	//   NotFound - allocation is requested for unknown IP pool
+	//   AlreadyExists - container identified by IPAMParameters already has allocated IP in the pool
+	//   ResourceExhausted - no free IP addresses available in the IP pool
 	Allocate(ctx context.Context, in *AllocateRequest, opts ...grpc.CallOption) (*AllocateResponse, error)
 	// IsAllocated is called as a part of CMD_CHECK flow
 	// Returns empty response if a valid allocation already exists or an error otherwise.
 	// If multiple pools are provided in the request, then check
 	// succeed only if it is succeed for all pools.
 	// errors:
-	//
-	//	Canceled - request was canceled by the caller
-	//	Internal - internal failure of the service, this error can't be fixed by the caller
-	//	InvalidArgument - missing required argument or argument has wrong format, check message for details
-	//	NotFound - allocation not found
+	//   Canceled - request was canceled by the caller
+	//   Internal - internal failure of the service, this error can't be fixed by the caller
+	//   InvalidArgument - missing required argument or argument has wrong format, check message for details
+	//   NotFound - allocation not found
 	IsAllocated(ctx context.Context, in *IsAllocatedRequest, opts ...grpc.CallOption) (*IsAllocatedResponse, error)
 	// Deallocate is called as a part of CMD_DEL flow.
 	// Returns empty response if allocation for all pools released successfully or error otherwise.
 	// If multiple pools are provided in the request, then deallocation
 	// succeeds if it is succeeds for all pools else no deallocation is performed.
 	// errors:
-	//
-	//	Canceled - request was canceled by the caller
-	//	Internal - internal failure of the service, this error can't be fixed by the caller
-	//	InvalidArgument - missing required argument or argument has wrong format, check message for details
+	//   Canceled - request was canceled by the caller
+	//   Internal - internal failure of the service, this error can't be fixed by the caller
+	//   InvalidArgument - missing required argument or argument has wrong format, check message for details
 	Deallocate(ctx context.Context, in *DeallocateRequest, opts ...grpc.CallOption) (*DeallocateResponse, error)
 }
 
@@ -124,34 +121,31 @@ type IPAMServiceServer interface {
 	// Returns response with allocated IPs if allocation succeeds or an error in case of failure.
 	// If multiple pools are provided in the request, then allocation succeeds if it succeeds for all pools.
 	// errors:
-	//
-	//	Canceled - request was canceled by the caller
-	//	Internal - internal failure of the service, this error can't be fixed by the caller
-	//	InvalidArgument - missing required argument or argument has wrong format, check message for details
-	//	NotFound - allocation is requested for unknown IP pool
-	//	AlreadyExists - container identified by IPAMParameters already has allocated IP in the pool
-	//	ResourceExhausted - no free IP addresses available in the IP pool
+	//   Canceled - request was canceled by the caller
+	//   Internal - internal failure of the service, this error can't be fixed by the caller
+	//   InvalidArgument - missing required argument or argument has wrong format, check message for details
+	//   NotFound - allocation is requested for unknown IP pool
+	//   AlreadyExists - container identified by IPAMParameters already has allocated IP in the pool
+	//   ResourceExhausted - no free IP addresses available in the IP pool
 	Allocate(context.Context, *AllocateRequest) (*AllocateResponse, error)
 	// IsAllocated is called as a part of CMD_CHECK flow
 	// Returns empty response if a valid allocation already exists or an error otherwise.
 	// If multiple pools are provided in the request, then check
 	// succeed only if it is succeed for all pools.
 	// errors:
-	//
-	//	Canceled - request was canceled by the caller
-	//	Internal - internal failure of the service, this error can't be fixed by the caller
-	//	InvalidArgument - missing required argument or argument has wrong format, check message for details
-	//	NotFound - allocation not found
+	//   Canceled - request was canceled by the caller
+	//   Internal - internal failure of the service, this error can't be fixed by the caller
+	//   InvalidArgument - missing required argument or argument has wrong format, check message for details
+	//   NotFound - allocation not found
 	IsAllocated(context.Context, *IsAllocatedRequest) (*IsAllocatedResponse, error)
 	// Deallocate is called as a part of CMD_DEL flow.
 	// Returns empty response if allocation for all pools released successfully or error otherwise.
 	// If multiple pools are provided in the request, then deallocation
 	// succeeds if it is succeeds for all pools else no deallocation is performed.
 	// errors:
-	//
-	//	Canceled - request was canceled by the caller
-	//	Internal - internal failure of the service, this error can't be fixed by the caller
-	//	InvalidArgument - missing required argument or argument has wrong format, check message for details
+	//   Canceled - request was canceled by the caller
+	//   Internal - internal failure of the service, this error can't be fixed by the caller
+	//   InvalidArgument - missing required argument or argument has wrong format, check message for details
 	Deallocate(context.Context, *DeallocateRequest) (*DeallocateResponse, error)
 	mustEmbedUnimplementedIPAMServiceServer()
 }
