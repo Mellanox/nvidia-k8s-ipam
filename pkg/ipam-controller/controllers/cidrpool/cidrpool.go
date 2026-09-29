@@ -397,11 +397,13 @@ func (r *CIDRPoolReconciler) handleInvalidSpec(ctx context.Context,
 		return ctrl.Result{}, err2
 	}
 	r.recorder.Event(pool, "Warning", "InvalidSpec", err.Error())
-	return ctrl.Result{Requeue: false}, nil
+	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *CIDRPoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// Keep the core/v1 recorder interface and existing event RBAC.
+	//nolint:staticcheck
 	r.recorder = mgr.GetEventRecorderFor("CIDRPoolController")
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&ipamv1alpha1.CIDRPool{}).
