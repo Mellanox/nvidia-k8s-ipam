@@ -242,6 +242,7 @@ grpc-generate: protoc protoc-gen-go protoc-gen-go-grpc ## Generate GO client and
 						--go-grpc_opt=$$pkg_name" ; \
 	done; \
 	$(PROTOC)  $$PROTOC_OPTIONS $$TARGET_FILES
+	gofmt -w $(GENERATED_CODE_DIR)/nvidia
 
 .PHONY: grpc-check
 grpc-check: grpc-format grpc-lint protoc protoc-gen-go protoc-gen-go-grpc $(GRPC_TMP_DIR)  ## Check that generated GO client code match proto files
