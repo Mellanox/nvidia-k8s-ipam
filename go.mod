@@ -3,7 +3,7 @@ module github.com/Mellanox/nvidia-k8s-ipam
 go 1.26.0
 
 require (
-	github.com/containernetworking/cni v1.3.0
+	github.com/containernetworking/cni v1.3.1
 	github.com/go-logr/logr v1.4.4
 	github.com/gofrs/flock v0.13.1
 	github.com/google/renameio/v2 v2.0.2
