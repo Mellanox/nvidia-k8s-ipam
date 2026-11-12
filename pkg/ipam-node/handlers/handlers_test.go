@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"path/filepath"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -29,6 +30,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	nodev1 "github.com/Mellanox/nvidia-k8s-ipam/api/grpc/nvidia/ipam/node/v1"
+	"github.com/Mellanox/nvidia-k8s-ipam/pkg/common"
 	"github.com/Mellanox/nvidia-k8s-ipam/pkg/ip"
 	allocatorPkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/allocator"
 	allocatorMockPkg "github.com/Mellanox/nvidia-k8s-ipam/pkg/ipam-node/allocator/mocks"
@@ -422,7 +424,55 @@ var _ = Describe("Handlers", func() {
 		_, err := handlers.Deallocate(ctx, &nodev1.DeallocateRequest{Parameters: getValidIPAMParams()})
 		Expect(status.Code(err) == codes.Canceled).To(BeTrue())
 	})
+	DescribeTable("Allocate with overlapping exclusion ranges",
+		func(poolType nodev1.PoolType, poolCfg *pool.Pool, expectedIP string) {
+			realPoolManager := pool.NewManager()
+			realPoolManager.UpdatePool(common.GetPoolKey(poolCfg.Name, poolTypeToString(poolType)), poolCfg)
+			realStore := storePkg.New(filepath.Join(GinkgoT().TempDir(), "store"))
+			realHandlers := handlersPkg.New(realPoolManager, realStore, allocatorPkg.NewIPAllocator, 0)
+			ipamParams := getValidIPAMParams()
+			ipamParams.Pools = []string{poolCfg.Name}
+			ipamParams.PoolType = poolType
+			resp, err := realHandlers.Allocate(ctx, &nodev1.AllocateRequest{Parameters: ipamParams})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.Allocations).To(HaveLen(1))
+			Expect(resp.Allocations[0].Ip).To(Equal(expectedIP))
+		},
+		Entry("IPPool, exclusions overlap each other", nodev1.PoolType_POOL_TYPE_IPPOOL,
+			&pool.Pool{Name: testPoolName1, Subnet: "192.168.0.0/16",
+				StartIP: "192.168.0.1", EndIP: "192.168.0.100", Gateway: "192.168.0.1",
+				Exclusions: []pool.ExclusionRange{
+					{StartIP: "192.168.0.2", EndIP: "192.168.0.10"},
+					{StartIP: "192.168.0.5", EndIP: "192.168.0.15"},
+				}},
+			"192.168.0.16/16"),
+		// exclusions as built by the ipam-node IPPool controller for the README IPPool example
+		Entry("IPPool, exclusion overlaps perNodeExclusions", nodev1.PoolType_POOL_TYPE_IPPOOL,
+			&pool.Pool{Name: testPoolName1, Subnet: "192.168.0.0/16",
+				StartIP: "192.168.0.1", EndIP: "192.168.0.100", Gateway: "192.168.0.1",
+				Exclusions: []pool.ExclusionRange{
+					{StartIP: "192.168.0.10", EndIP: "192.168.0.20"},
+					{StartIP: "192.168.0.1", EndIP: "192.168.0.11"},
+				}},
+			"192.168.0.21/16"),
+		// exclusions as built by the ipam-node CIDRPool controller for the README CIDRPool example
+		Entry("CIDRPool, exclusion overlaps perNodeExclusions", nodev1.PoolType_POOL_TYPE_CIDRPOOL,
+			&pool.Pool{Name: testPoolName1, Subnet: "192.168.0.0/24",
+				StartIP: "192.168.0.1", EndIP: "192.168.0.254", Gateway: "192.168.0.1",
+				Exclusions: []pool.ExclusionRange{
+					{StartIP: "192.168.0.10", EndIP: "192.168.0.20"},
+					{StartIP: "192.168.0.0", EndIP: "192.168.0.10"},
+				}},
+			"192.168.0.21/24"),
+	)
 })
+
+func poolTypeToString(poolType nodev1.PoolType) string {
+	if poolType == nodev1.PoolType_POOL_TYPE_CIDRPOOL {
+		return common.PoolTypeCIDRPool
+	}
+	return common.PoolTypeIPPool
+}
 
 func getIPWithMask(addr string) net.IPNet {
 	ipAddr, netAddr, err := net.ParseCIDR(addr)
