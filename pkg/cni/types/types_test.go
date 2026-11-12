@@ -249,6 +249,11 @@ var _ = Describe("Types Tests", func() {
 				`{}`,
 				`{"name": "my-net", "ipam": {"confDir": %q, "poolName": "pool1,pool2,pool3"}}`,
 				[]string{}, false),
+			Entry("STDIN args without cni key",
+				`{}`,
+				`{"name": "my-net", "args": {"org.apache.mesos": {"network_info": {"name": "my-net"}}},
+							"ipam": {"confDir": %q}}`,
+				[]string{"my-net"}, true),
 		)
 		DescribeTable("PoolType",
 			func(fileContent string, stdinContent string, expectedValue string, isValid bool) {
@@ -269,6 +274,8 @@ var _ = Describe("Types Tests", func() {
 			Entry("from STDIN CNI Args", `{}`, `{"name": "my-net",
 				"args": {"cni": {"poolType":"cidrpool"}}, "ipam": {"confDir": %q}}`, "cidrpool", true),
 			Entry("unknown type", `{}`, `{"name": "my-net", "ipam": {"confDir": %q, "poolType": "foobar"}}`, "", false),
+			Entry("STDIN args without cni key", `{}`, `{"name": "my-net",
+				"args": {"org.apache.mesos": {"network_info": {"name": "my-net"}}}, "ipam": {"confDir": %q}}`, "ippool", true),
 		)
 		It("errors if allocateIPWithIndex is negative", func() {
 			// write empty config file
