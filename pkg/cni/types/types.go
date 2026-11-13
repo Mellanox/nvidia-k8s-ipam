@@ -266,7 +266,7 @@ func parseIP(s string) net.IP {
 // STDIN field "args[cni][poolNames]" has the highest priority
 func getPools(n *NetConf) ([]string, error) {
 	var pools []string
-	if n.Args != nil && len(n.Args.ArgsCNI.PoolNames) > 0 {
+	if n.Args != nil && n.Args.ArgsCNI != nil && len(n.Args.ArgsCNI.PoolNames) > 0 {
 		pools = n.Args.ArgsCNI.PoolNames
 	} else {
 		if n.IPAM.PoolName == "" {
@@ -289,7 +289,7 @@ func getPools(n *NetConf) ([]string, error) {
 // STDIN field "args[cni][poolType]" has the highest priority
 func getPoolType(n *NetConf) (string, error) {
 	var poolType string
-	if n.Args != nil && n.Args.ArgsCNI.PoolType != "" {
+	if n.Args != nil && n.Args.ArgsCNI != nil && n.Args.ArgsCNI.PoolType != "" {
 		poolType = n.Args.ArgsCNI.PoolType
 	} else {
 		poolType = n.IPAM.PoolType
