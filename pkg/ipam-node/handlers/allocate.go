@@ -182,17 +182,18 @@ func (h *Handlers) allocateInPool(poolName string, reqLog logr.Logger,
 
 	exclusionRangeSet := make(allocator.RangeSet, 0, len(poolCfg.Exclusions))
 	for _, e := range poolCfg.Exclusions {
-		exclusionRangeSet = append(exclusionRangeSet, allocator.Range{
+		exclusionRange := allocator.Range{
 			Subnet:     cniTypes.IPNet(*subnet),
 			RangeStart: net.ParseIP(e.StartIP),
 			RangeEnd:   net.ParseIP(e.EndIP),
-		})
-	}
-	if len(exclusionRangeSet) > 0 {
-		if err := exclusionRangeSet.Canonicalize(); err != nil {
+		}
+		// exclusion ranges may overlap (e.g. spec.exclusions and spec.perNodeExclusions),
+		// so validate each range on its own instead of the whole set
+		if err := exclusionRange.Canonicalize(); err != nil {
 			return PoolAlloc{}, poolCfgError(poolLog, poolName, poolType,
 				fmt.Sprintf("invalid exclusion range config: %s", err.Error()))
 		}
+		exclusionRangeSet = append(exclusionRangeSet, exclusionRange)
 	}
 	alloc := h.getAllocFunc(rangeSet, &exclusionRangeSet, poolKey, session)
 	allocMeta := types.ReservationMetadata{
