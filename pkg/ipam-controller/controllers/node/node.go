@@ -15,14 +15,17 @@ package controllers
 
 import (
 	"context"
+	"maps"
 
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	ipamv1alpha1 "github.com/Mellanox/nvidia-k8s-ipam/api/v1alpha1"
 
@@ -77,6 +80,26 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 // SetupWithManager sets up the controller with the Manager.
 func (r *NodeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&corev1.Node{}).
+		For(&corev1.Node{}, builder.WithPredicates(nodeEventPredicate())).
 		Complete(r)
+}
+
+// nodeEventPredicate passes only Node events that can change pool membership.
+// Pools select nodes by labels (matchExpressions) or by immutable fields
+// (matchFields on metadata.name), so status, annotation and spec updates are
+// irrelevant. Without this filter every node heartbeat/annotation write
+// re-reconciles all pools, which on large clusters keeps the controller busy
+// re-listing all nodes several times per second.
+func nodeEventPredicate() predicate.Funcs {
+	return predicate.Funcs{
+		CreateFunc:  func(event.CreateEvent) bool { return true },
+		DeleteFunc:  func(event.DeleteEvent) bool { return true },
+		GenericFunc: func(event.GenericEvent) bool { return true },
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			if e.ObjectOld == nil || e.ObjectNew == nil {
+				return true
+			}
+			return !maps.Equal(e.ObjectOld.GetLabels(), e.ObjectNew.GetLabels())
+		},
+	}
 }

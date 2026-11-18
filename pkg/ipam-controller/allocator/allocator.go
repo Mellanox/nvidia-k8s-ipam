@@ -248,7 +248,7 @@ func (pa *PoolAllocator) load(ctx context.Context, nodeName string, allocRange A
 		return err
 	}
 
-	log.Info("data loaded", "startIP", allocRange.StartIP, "endIP", allocRange.EndIP)
+	log.V(1).Info("data loaded", "startIP", allocRange.StartIP, "endIP", allocRange.EndIP)
 	pa.allocations[nodeName] = allocRange
 	pa.startIps.Insert(allocRange.StartIP.String())
 	return nil

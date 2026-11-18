@@ -121,7 +121,7 @@ func (r *CIDRPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// different elements order
 	allocations := make([]ipamv1alpha1.CIDRPoolAllocation, 0, len(allocationsByNodeName))
 	for _, a := range allocationsByNodeName {
-		reqLog.Info("prefix allocated", "node", a.NodeName, "prefix", a.Prefix, "gateway", a.Gateway)
+		reqLog.V(1).Info("prefix allocated", "node", a.NodeName, "prefix", a.Prefix, "gateway", a.Gateway)
 		allocations = append(allocations, *a)
 	}
 	sort.Slice(allocations, func(i, j int) bool {
@@ -295,7 +295,7 @@ func (r *CIDRPoolReconciler) getValidExistingAllocationsMaps(ctx context.Context
 		nodeMap[alloc.NodeName] = alloc
 		prefixMap[alloc.Prefix] = alloc
 
-		reqLog.Info("keep allocation for node", "node", alloc.NodeName, "prefix", alloc.Prefix, "gateway", alloc.Gateway)
+		reqLog.V(1).Info("keep allocation for node", "node", alloc.NodeName, "prefix", alloc.Prefix, "gateway", alloc.Gateway)
 	}
 	return nodeMap, prefixMap
 }
