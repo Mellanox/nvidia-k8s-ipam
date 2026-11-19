@@ -21,7 +21,7 @@ DOCKERFILE ?= Dockerfile
 DOCKER_CMD ?= docker
 
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.36.0
+ENVTEST_K8S_VERSION = 1.37.0
 
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -150,15 +150,15 @@ BUF ?= $(LOCALBIN)/buf
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 
 ## Tool Versions
-GOLANGCILINT_VERSION ?= v2.12.2
+GOLANGCILINT_VERSION ?= v2.15.0
 GCOV2LCOV_VERSION ?= v1.0.5
 MOCKERY_VERSION ?= v2.49.1
 PROTOC_VER ?= 28.3
 PROTOC_GEN_GO_VER ?= 1.35.2
 PROTOC_GEN_GO_GRPC_VER ?= 1.5.1
 BUF_VERSION ?= 1.47.2
-CONTROLLER_GEN_VERSION ?= v0.21.0
-SETUP_ENVTEST_VERSION ?= release-0.24
+CONTROLLER_GEN_VERSION ?= v0.23.0
+SETUP_ENVTEST_VERSION ?= release-0.25
 
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.

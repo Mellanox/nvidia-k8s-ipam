@@ -285,7 +285,8 @@ func RunNodeDaemon(ctx context.Context, config *rest.Config, opts *options.Optio
 
 	select {
 	case <-ctx.Done():
-	case <-errCh:
+	case err := <-errCh:
+		logger.Error(err, "component failed, shutting down")
 		innerCFunc()
 	}
 	wg.Wait()
